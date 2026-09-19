@@ -1,0 +1,31 @@
+{
+ "Name": "Name-158",
+ "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+ "Id": "2",
+ "Etag": "eea91519e5f53e4cdf4ff2322b7c736a",
+ "DateCreated": "2025-05-14T12:55:40.0000000Z",
+ "DateModified": "0001-01-01T00:00:00.0000000Z",
+ "CanDelete": false,
+ "CanDownload": false,
+ "PresentationUniqueKey": "8587e000585a1ba0918ea0eccbc6f8fd",
+ "SupportsSync": true,
+ "SortName": "Name-158",
+ "ForcedSortName": "Name-158",
+ "ExternalUrls": [],
+ "Taglines": [],
+ "RemoteTrailers": [],
+ "ProviderIds": {},
+ "IsFolder": true,
+ "Type": "UserRootFolder",
+ "UserData": {
+  "PlaybackPositionTicks": 0,
+  "IsFavorite": false,
+  "Played": false
+ },
+ "ChildCount": 4,
+ "DisplayPreferencesId": "8d6a666246c55b31ac51abfd8a12104d",
+ "ImageTags": {},
+ "BackdropImageTags": [],
+ "LockedFields": [],
+ "LockData": false
+}

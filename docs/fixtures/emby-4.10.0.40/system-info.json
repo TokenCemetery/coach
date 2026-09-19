@@ -1,0 +1,41 @@
+{
+ "SystemUpdateLevel": "Release",
+ "OperatingSystemDisplayName": "Unix",
+ "HasPendingRestart": false,
+ "IsShuttingDown": false,
+ "HasImageEnhancers": false,
+ "OperatingSystem": "Linux",
+ "SupportsLibraryMonitor": true,
+ "SupportsLocalPortConfiguration": true,
+ "SupportsWakeServer": false,
+ "WebSocketPortNumber": 8096,
+ "CompletedInstallations": [],
+ "CanSelfRestart": true,
+ "CanSelfUpdate": false,
+ "CanLaunchWebBrowser": false,
+ "HttpServerPortNumber": 8096,
+ "SupportsHttps": false,
+ "HttpsPortNumber": 8920,
+ "HasUpdateAvailable": false,
+ "SupportsAutoRunAtStartup": false,
+ "HardwareAccelerationRequiresPremiere": true,
+ "WakeOnLanInfo": [
+  {
+   "MacAddress": "0242AC1C0002",
+   "BroadcastAddress": "172.28.255.255",
+   "Port": 9
+  }
+ ],
+ "IsInMaintenanceMode": false,
+ "LocalAddress": "http://172.28.0.2:8096",
+ "LocalAddresses": [
+  "http://172.28.0.2:8096"
+ ],
+ "WanAddress": "http://81.201.19.154:8096",
+ "RemoteAddresses": [
+  "http://81.201.19.154:8096"
+ ],
+ "ServerName": "ServerName-178",
+ "Version": "4.10.0.40",
+ "Id": "26c273cd435d6b2d4a9bcd45cce2e017"
+}

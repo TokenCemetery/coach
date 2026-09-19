@@ -1,0 +1,43 @@
+{
+ "Items": [
+  {
+   "Name": "Name-139",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "59",
+   "SupportsSync": true,
+   "IsFolder": true,
+   "Type": "Folder",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {},
+   "BackdropImageTags": [],
+   "PrimaryImageItemId": "64666",
+   "PrimaryImageTag": "33e893876f8716c77550787971494308e0c7144285ef3be71d3"
+  },
+  {
+   "Name": "Name-140",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "58",
+   "SupportsSync": true,
+   "IsFolder": true,
+   "Type": "Folder",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {},
+   "BackdropImageTags": [],
+   "PrimaryImageItemId": "64668",
+   "PrimaryImageTag": "90f90de976f3401758ace48f3ab582d19f5118c5724961f4680"
+  }
+ ],
+ "TotalRecordCount": 45
+}

@@ -1,0 +1,328 @@
+{
+ "Items": [
+  {
+   "Name": "Name-9",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "148647",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 64845760000,
+   "ProductionYear": 2026,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {
+    "Primary": "fda01d16a524a042e5d5d8a9db58cb45bf53a787103ba9c62da",
+    "Logo": "12c00942a6c48bfa6037c079bd620504436afe4e2fbc6226ddb"
+   },
+   "BackdropImageTags": [
+    "8a434e83b91b94e812966816f82dab29ef300e0a0ebebb84b2e"
+   ],
+   "MediaType": "Video"
+  },
+  {
+   "Name": "Name-10",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "145493",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 65556741250,
+   "ProductionYear": 1996,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {
+    "Primary": "2df9772bac226c70ce027e852d77f5ee074b8de2abbdc68e46c",
+    "Logo": "3348684b0cb9e1b4a4c766b0e0ae16f68e3b7eb069309681abb"
+   },
+   "BackdropImageTags": [
+    "4bc9d0f0c36f9a08368781d2707c457fc1fb0d594bc8fccab61"
+   ],
+   "MediaType": "Video"
+  },
+  {
+   "Name": "Name-11",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "145524",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 59996610000,
+   "ProductionYear": 2002,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {
+    "Primary": "de90e2c51be18d94f0ed33241e2e62c2598020d2b06a5199d4c",
+    "Logo": "786d43cfbd63dcd6c23f6e139734a8193bb6022bd1aee3d1d55"
+   },
+   "BackdropImageTags": [
+    "c4c760f013b589b4267bff5eed38485b6b35ee1096b6be466aa"
+   ],
+   "MediaType": "Video"
+  },
+  {
+   "Name": "Name-12",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "143739",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 76458830000,
+   "ProductionYear": 2026,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.68,
+   "ImageTags": {
+    "Primary": "3be989ffb450cb21f194debc3eea478b5b1d22e3fd3a0d35176",
+    "Logo": "5cedde22dbb7e8cd5c8283fff73045b4800a10621f68be0a598"
+   },
+   "BackdropImageTags": [
+    "f6c27691a1f7922d97d6e0211cdbc248000b5dd704dcd88f484"
+   ],
+   "MediaType": "Video"
+  },
+  {
+   "Name": "Name-13",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "143027",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 57254080000,
+   "ProductionYear": 2026,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.68,
+   "ImageTags": {
+    "Primary": "a5207383f120403c02cf4f351aa67edaa9b1d5000083000e72a",
+    "Logo": "bc6031f7c4a0c42892695d76bfb129d68e8758caf200f5f03c5"
+   },
+   "BackdropImageTags": [
+    "bcf7afc1f6e2e22b3d5e75761e3476a0ac86910e87159a54408"
+   ],
+   "MediaType": "Video"
+  },
+  {
+   "Name": "Name-14",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "143026",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 46288000000,
+   "ProductionYear": 2025,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {
+    "Primary": "564a1338b8ba25d26082eb5ebfdb355b1de34108cbfe127e1ae"
+   },
+   "BackdropImageTags": [
+    "cae5b80eebe2de46fd192c83ca353bb2a62079200bcfcc71f7d"
+   ],
+   "MediaType": "Video"
+  },
+  {
+   "Name": "Name-15",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "117866",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 50844480000,
+   "ProductionYear": 2025,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {
+    "Primary": "11059a2b589bc0bec51da1573623bb928b9eb0c5fe5d6934b61",
+    "Logo": "1162e9c2345ed35ccbdcdd3a5b34bb9579b59cabe64c38c535e"
+   },
+   "BackdropImageTags": [
+    "e347113dcb4d3894d3c36743b42b3bc5620a8956f0d1f25063c"
+   ],
+   "MediaType": "Video"
+  },
+  {
+   "Name": "Name-16",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "64431",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 78549540000,
+   "ProductionYear": 1993,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {
+    "Primary": "63a2749d8a90b09fa9a6db951f110eb2bb187f669be94f52112",
+    "Logo": "60a82276568a32ed3fc910f31ad803d6bdf22e3d23a8fedc80b"
+   },
+   "BackdropImageTags": [
+    "53caab153ca17a5df9a96527d82275c5720a85a6ba80e924cef"
+   ],
+   "MediaType": "Video"
+  },
+  {
+   "Name": "Name-17",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "64429",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 63086810000,
+   "ProductionYear": 1990,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {
+    "Primary": "82f79093b801605553fb4eef7cc28e79cb55aa51a421d5c09bc",
+    "Logo": "a29623ca09960ac0e20367a131c51154a59de95b9cd3043b510"
+   },
+   "BackdropImageTags": [
+    "9ca00ce7ed7948f68124085d01b7d97f13a69ccfcba9749323d"
+   ],
+   "MediaType": "Video"
+  },
+  {
+   "Name": "Name-18",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "64428",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 59736320000,
+   "ProductionYear": 1993,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {
+    "Primary": "c26622d50aecb610a6595bf8b72bd7805fb3d98f99cc8de198c",
+    "Logo": "3d319b1bc81787cf9b741d03fe5ac7c64d6960553e6dd405444"
+   },
+   "BackdropImageTags": [
+    "89126081957f15a4e08760f505cb21eec15d17305b193faabe1"
+   ],
+   "MediaType": "Video"
+  },
+  {
+   "Name": "Name-19",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "64427",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 65803840000,
+   "ProductionYear": 1991,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {
+    "Primary": "3125b628c9ce90bf9b30ecd202ab1b300f12429d694c4b8470f",
+    "Logo": "a20d40bdd0fbfe41bbb4d2a68170d4fcbbbefb3a289ab02022c"
+   },
+   "BackdropImageTags": [
+    "9060817dab6748b2b9a03e1674edc39d28372873cc02643b993"
+   ],
+   "MediaType": "Video"
+  },
+  {
+   "Name": "Name-20",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "64425",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 56750080000,
+   "ProductionYear": 1996,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {
+    "Primary": "8859eff8584818d062841189e838f02c4c8d88e03156e41c289",
+    "Logo": "3992287ffcc7611aad0a8c724435bcd083e15d16b9b254af488"
+   },
+   "BackdropImageTags": [
+    "489c67dcfa0a9cb4b35c09a8d38ad3b509f7ae4db2aae3b280d"
+   ],
+   "MediaType": "Video"
+  }
+ ],
+ "TotalRecordCount": 12
+}

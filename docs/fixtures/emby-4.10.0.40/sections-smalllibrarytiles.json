@@ -1,0 +1,93 @@
+{
+ "Items": [
+  {
+   "Name": "Name-1",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "3",
+   "Guid": "9dd74f22fad76c880098a360925f13d6",
+   "CanDelete": false,
+   "CanDownload": false,
+   "SupportsSync": true,
+   "IsFolder": true,
+   "Type": "CollectionFolder",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "CollectionType": "movies",
+   "ImageTags": {
+    "Primary": "a6e15ae00e7f3fc815996e549fbdb25739324bc6817a9c3dbcf"
+   },
+   "BackdropImageTags": []
+  },
+  {
+   "Name": "Name-2",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "5",
+   "Guid": "c2250ae85abaa878502552713ef24638",
+   "CanDelete": false,
+   "CanDownload": false,
+   "SupportsSync": true,
+   "IsFolder": true,
+   "Type": "CollectionFolder",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "CollectionType": "tvshows",
+   "ImageTags": {
+    "Primary": "2983ce3d95cd2aab3288334c2533d47a59ab63263d833ee53fb"
+   },
+   "BackdropImageTags": []
+  },
+  {
+   "Name": "Name-3",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "62358",
+   "Guid": "d88f54c927e4d66602a27623356c3d91",
+   "CanDelete": false,
+   "CanDownload": false,
+   "SupportsSync": true,
+   "IsFolder": true,
+   "Type": "CollectionFolder",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "CollectionType": "movies",
+   "ImageTags": {
+    "Primary": "93ea2cc5dc9fe1ee77ab125d14a9dcbf85b1228217775d869e9"
+   },
+   "BackdropImageTags": []
+  },
+  {
+   "Name": "Name-4",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "7",
+   "Guid": "33b4e1bd35915ea2c61db9629270fd52",
+   "CanDelete": false,
+   "CanDownload": false,
+   "SupportsSync": true,
+   "IsFolder": true,
+   "Type": "CollectionFolder",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "CollectionType": "tvshows",
+   "ImageTags": {
+    "Primary": "8bf7e35c52b4ea79d487a6138910e785c0bfcdc79d0fec2f5b9"
+   },
+   "BackdropImageTags": []
+  }
+ ],
+ "TotalRecordCount": 4
+}

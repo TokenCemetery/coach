@@ -1,0 +1,44 @@
+{
+ "Name": "Name-1",
+ "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+ "Id": "3",
+ "Guid": "9dd74f22fad76c880098a360925f13d6",
+ "Etag": "f7f4569bd6487e26b132b344821ddf58",
+ "DateCreated": "2025-05-14T13:00:40.0000000Z",
+ "DateModified": "0001-01-01T00:00:00.0000000Z",
+ "CanDelete": false,
+ "CanDownload": false,
+ "PresentationUniqueKey": "9dd74f22fad76c880098a360925f13d6",
+ "SupportsSync": true,
+ "SortName": "Name-1",
+ "ForcedSortName": "Name-1",
+ "ExternalUrls": [],
+ "Taglines": [],
+ "RemoteTrailers": [],
+ "ProviderIds": {},
+ "IsFolder": true,
+ "ParentId": "2",
+ "Type": "CollectionFolder",
+ "UserData": {
+  "PlaybackPositionTicks": 0,
+  "IsFavorite": false,
+  "Played": false
+ },
+ "ChildCount": 1,
+ "DisplayPreferencesId": "9dd74f22fad76c880098a360925f13d6",
+ "PrimaryImageAspectRatio": 1.7777777777777777,
+ "CollectionType": "movies",
+ "ImageTags": {
+  "Primary": "a6e15ae00e7f3fc815996e549fbdb25739324bc6817a9c3dbcf"
+ },
+ "BackdropImageTags": [],
+ "LockedFields": [],
+ "LockData": false,
+ "Subviews": [
+  "movies",
+  "collections",
+  "genres",
+  "movies",
+  "folders"
+ ]
+}

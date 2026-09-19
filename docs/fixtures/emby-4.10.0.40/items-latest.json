@@ -1,0 +1,75 @@
+[
+ {
+  "Name": "Name-141",
+  "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+  "Id": "148981",
+  "RunTimeTicks": 31800000000,
+  "IsFolder": true,
+  "Type": "Series",
+  "UserData": {
+   "UnplayedItemCount": 15,
+   "PlaybackPositionTicks": 0,
+   "PlayCount": 0,
+   "IsFavorite": false,
+   "Played": false
+  },
+  "Status": "Continuing",
+  "AirDays": [],
+  "ImageTags": {
+   "Primary": "8ca19c641a5d482c17950e48448b79f7a9f33d1ca5c385405e8",
+   "Logo": "b1a36d6279c8bd1e69a870dd0406aec233ff31f161b45a4de69"
+  },
+  "BackdropImageTags": [
+   "7dbe79156230f97931cdf0034abb9d703b28d5be2f8e0103c6c"
+  ]
+ },
+ {
+  "Name": "Name-142",
+  "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+  "Id": "149332",
+  "RunTimeTicks": 57863040000,
+  "IsFolder": false,
+  "Type": "Movie",
+  "UserData": {
+   "PlaybackPositionTicks": 0,
+   "PlayCount": 0,
+   "IsFavorite": false,
+   "Played": false
+  },
+  "ImageTags": {
+   "Primary": "7cf3ecfad5f34cac389be28f187935218fe2131ac7dc2cb9d26",
+   "Logo": "47a8724c075b0587f3aef83ac17eea0caad8a377e21786f616e",
+   "Thumb": "ef870ebe5b65b71a22ad69dae50248b52f503d96410ce0a1ea4"
+  },
+  "BackdropImageTags": [
+   "43568b1d759be3ee3c5836d4d8bcb34d00c61f504245a261194"
+  ],
+  "MediaType": "Video"
+ },
+ {
+  "Name": "Name-143",
+  "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+  "Id": "149090",
+  "RunTimeTicks": 27000000000,
+  "IsFolder": true,
+  "Type": "Series",
+  "UserData": {
+   "UnplayedItemCount": 65,
+   "PlaybackPositionTicks": 0,
+   "PlayCount": 0,
+   "IsFavorite": false,
+   "Played": false
+  },
+  "Status": "Ended",
+  "AirDays": [],
+  "ImageTags": {
+   "Primary": "98999de2d16b17cd0dc789e5fbaac58b1635044937e8d9c7d83",
+   "Logo": "114a8ed07b5f2d14a8134b05435af4f17f1bae647c75ff723eb",
+   "Thumb": "d37f411c33b09e32999845d2f998d19aa37ae8d2d814f744e96"
+  },
+  "BackdropImageTags": [
+   "aca00a369f086ae87c534436a670a801c2a2e9d77c42df92be7"
+  ],
+  "EndDate": "2015-04-13T21:00:00.0000000Z"
+ }
+]

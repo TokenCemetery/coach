@@ -1,0 +1,46 @@
+{
+ "Name": "Name-2",
+ "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+ "Id": "5",
+ "Guid": "c2250ae85abaa878502552713ef24638",
+ "Etag": "f29c623461cadbc75fd6f69638b736d5",
+ "DateCreated": "2025-05-14T13:02:17.0000000Z",
+ "DateModified": "0001-01-01T00:00:00.0000000Z",
+ "CanDelete": false,
+ "CanDownload": false,
+ "PresentationUniqueKey": "c2250ae85abaa878502552713ef24638",
+ "SupportsSync": true,
+ "SortName": "Name-2",
+ "ForcedSortName": "Name-2",
+ "ExternalUrls": [],
+ "Taglines": [],
+ "RemoteTrailers": [],
+ "ProviderIds": {},
+ "IsFolder": true,
+ "ParentId": "2",
+ "Type": "CollectionFolder",
+ "UserData": {
+  "PlaybackPositionTicks": 0,
+  "IsFavorite": false,
+  "Played": false
+ },
+ "ChildCount": 1,
+ "DisplayPreferencesId": "c2250ae85abaa878502552713ef24638",
+ "PrimaryImageAspectRatio": 1.7777777777777777,
+ "CollectionType": "tvshows",
+ "ImageTags": {
+  "Primary": "2983ce3d95cd2aab3288334c2533d47a59ab63263d833ee53fb"
+ },
+ "BackdropImageTags": [],
+ "LockedFields": [],
+ "LockData": false,
+ "Subviews": [
+  "series",
+  "tags",
+  "studios",
+  "genres",
+  "episodes",
+  "series",
+  "folders"
+ ]
+}

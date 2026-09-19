@@ -1,0 +1,35 @@
+{
+ "Items": [
+  {
+   "Name": "Name-160",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "64292",
+   "IndexNumber": 1,
+   "IsFolder": true,
+   "Type": "Season",
+   "ParentLogoItemId": "63663",
+   "ParentBackdropItemId": "63663",
+   "ParentBackdropImageTags": [
+    "67274c6bcce1af3a4429a2b2ecb2ab500d837034c7df0055b25"
+   ],
+   "UserData": {
+    "UnplayedItemCount": 65,
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "SeriesName": "SeriesName-161",
+   "SeriesId": "63663",
+   "SeriesPrimaryImageTag": "c77f4ad2b81d71b7b10cc522fe2e081fce5fcb4ae45526c9993",
+   "ImageTags": {
+    "Primary": "6ca2f9359ec0e075cf6b741a0dbbf00a9fadcc7d643d6c041d1"
+   },
+   "BackdropImageTags": [],
+   "ParentLogoImageTag": "4ff957d91544d4422e7666ff4706478e1cade7e3d699de36047",
+   "ParentThumbItemId": "63663",
+   "ParentThumbImageTag": "6bec3c5aca966c748c095d838df288a36221c0850aa181daa8d"
+  }
+ ],
+ "TotalRecordCount": 1
+}

@@ -1,0 +1,279 @@
+{
+ "Name": "Name-12",
+ "OriginalTitle": "OriginalTitle-13",
+ "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+ "Id": "118007",
+ "Etag": "25d03101e2416fd67b34d681d5364e57",
+ "DateCreated": "2026-03-10T15:06:49.0000000Z",
+ "DateModified": "2026-03-10T15:06:49.0000000Z",
+ "CanDelete": false,
+ "CanDownload": true,
+ "PresentationUniqueKey": "PresentationUniqueKey-14",
+ "SupportsSync": true,
+ "Container": "avi",
+ "SortName": "Name-12",
+ "ForcedSortName": "Name-12",
+ "PremiereDate": "1980-12-31T21:00:00.0000000Z",
+ "ExternalUrls": [
+  {
+   "Name": "Name-15",
+   "Url": "https://www.imdb.com/title/tt1346228"
+  },
+  {
+   "Name": "Name-16",
+   "Url": "https://www.themoviedb.org/movie/854232"
+  },
+  {
+   "Name": "Name-17",
+   "Url": "https://trakt.tv/search/tmdb/854232?id_type=movie"
+  }
+ ],
+ "MediaSources": [
+  {
+   "Chapters": [],
+   "Protocol": "File",
+   "Id": "mediasource_118007",
+   "Path": "Path-18",
+   "Type": "Default",
+   "Container": "avi",
+   "Size": 159352832,
+   "Name": "Name-19",
+   "IsRemote": false,
+   "HasMixedProtocols": false,
+   "RunTimeTicks": 4920000000,
+   "SupportsTranscoding": true,
+   "SupportsDirectStream": true,
+   "SupportsDirectPlay": true,
+   "IsInfiniteStream": false,
+   "RequiresOpening": false,
+   "RequiresClosing": false,
+   "RequiresLooping": false,
+   "SupportsProbing": true,
+   "MediaStreams": [
+    {
+     "Codec": "mpeg4",
+     "CodecTag": "DX50",
+     "TimeBase": "1/25",
+     "VideoRange": "SDR",
+     "DisplayTitle": "DisplayTitle-20",
+     "IsInterlaced": false,
+     "BitRate": 2485485,
+     "BitDepth": 8,
+     "RefFrames": 1,
+     "IsDefault": false,
+     "IsForced": false,
+     "IsHearingImpaired": false,
+     "Height": 432,
+     "Width": 576,
+     "AverageFrameRate": 25,
+     "RealFrameRate": 25,
+     "Type": "Video",
+     "AspectRatio": "4:3",
+     "Index": 0,
+     "IsExternal": false,
+     "IsTextSubtitleStream": false,
+     "SupportsExternalStream": false,
+     "Protocol": "File",
+     "PixelFormat": "yuv420p",
+     "Level": -99,
+     "IsAnamorphic": false,
+     "ExtendedVideoType": "None",
+     "ExtendedVideoSubType": "None",
+     "ExtendedVideoSubTypeDescription": "None",
+     "AttachmentSize": 0
+    },
+    {
+     "Codec": "mp3",
+     "TimeBase": "1/12000",
+     "DisplayTitle": "DisplayTitle-21",
+     "IsInterlaced": false,
+     "ChannelLayout": "mono",
+     "BitRate": 96000,
+     "Channels": 1,
+     "SampleRate": 44100,
+     "IsDefault": false,
+     "IsForced": false,
+     "IsHearingImpaired": false,
+     "Type": "Audio",
+     "Index": 1,
+     "IsExternal": false,
+     "IsTextSubtitleStream": false,
+     "SupportsExternalStream": false,
+     "Protocol": "File",
+     "ExtendedVideoType": "None",
+     "ExtendedVideoSubType": "None",
+     "ExtendedVideoSubTypeDescription": "None",
+     "AttachmentSize": 0
+    }
+   ],
+   "Formats": [],
+   "Bitrate": 2591102,
+   "RequiredHttpHeaders": {},
+   "AddApiKeyToDirectStreamUrl": false,
+   "ReadAtNativeFramerate": false,
+   "DefaultAudioStreamIndex": 1,
+   "ItemId": "118007",
+   "MimeType": "video/x-msvideo"
+  }
+ ],
+ "ProductionLocations": [
+  "Soviet Union"
+ ],
+ "Path": "Path-18",
+ "Overview": "Overview-22",
+ "Taglines": [],
+ "Genres": [
+  "Genres-23"
+ ],
+ "CommunityRating": 6.556,
+ "RunTimeTicks": 4920000000,
+ "Size": 159352832,
+ "FileName": "FileName-24",
+ "Bitrate": 2591102,
+ "ProductionYear": 1980,
+ "RemoteTrailers": [],
+ "ProviderIds": {
+  "Tmdb": "854232",
+  "Imdb": "tt1346228"
+ },
+ "IsFolder": false,
+ "ParentId": "118002",
+ "Type": "Movie",
+ "People": [
+  {
+   "Name": "Name-25",
+   "Id": "23797",
+   "Role": "(voice)",
+   "Type": "Actor",
+   "PrimaryImageTag": "0981ead6d7f495ca6f3194ecd2cf6e9d4e8f4de8edba3d5ff8d"
+  },
+  {
+   "Name": "Name-26",
+   "Id": "23799",
+   "Role": "(voice)",
+   "Type": "Actor",
+   "PrimaryImageTag": "1cec3dcdd817183397954f2be2b73d8aacc441207d8eaed0db8"
+  },
+  {
+   "Name": "Name-27",
+   "Id": "118011",
+   "Role": "Director",
+   "Type": "Director",
+   "PrimaryImageTag": "1f7e595bfa28349b380ed5454cabd8d541728609559c6c73287"
+  },
+  {
+   "Name": "Name-27",
+   "Id": "118011",
+   "Role": "Screenplay",
+   "Type": "Writer",
+   "PrimaryImageTag": "1f7e595bfa28349b380ed5454cabd8d541728609559c6c73287"
+  },
+  {
+   "Name": "Name-28",
+   "Id": "118024",
+   "Role": "Screenplay",
+   "Type": "Writer",
+   "PrimaryImageTag": "24d23dc4d5af88f3489e636e3a5bcb54f42f34cd64b1b006f9f"
+  },
+  {
+   "Name": "Name-29",
+   "Id": "118012",
+   "Role": "Short Story",
+   "Type": "Writer",
+   "PrimaryImageTag": "104c492765a0a73d381ed0c5d4d89ddf893124b332141e7a12b"
+  }
+ ],
+ "Studios": [
+  {
+   "Name": "Name-30",
+   "Id": 118013
+  }
+ ],
+ "GenreItems": [
+  {
+   "Name": "Genres-23",
+   "Id": 928
+  }
+ ],
+ "TagItems": [],
+ "LocalTrailerCount": 0,
+ "UserData": {
+  "PlaybackPositionTicks": 0,
+  "PlayCount": 0,
+  "IsFavorite": false,
+  "Played": false
+ },
+ "DisplayPreferencesId": "bb3638708c6161366cbb84ff5e67f8b2",
+ "PrimaryImageAspectRatio": 0.6666666666666666,
+ "MediaStreams": [
+  {
+   "Codec": "mpeg4",
+   "CodecTag": "DX50",
+   "TimeBase": "1/25",
+   "VideoRange": "SDR",
+   "DisplayTitle": "DisplayTitle-20",
+   "IsInterlaced": false,
+   "BitRate": 2485485,
+   "BitDepth": 8,
+   "RefFrames": 1,
+   "IsDefault": false,
+   "IsForced": false,
+   "IsHearingImpaired": false,
+   "Height": 432,
+   "Width": 576,
+   "AverageFrameRate": 25,
+   "RealFrameRate": 25,
+   "Type": "Video",
+   "AspectRatio": "4:3",
+   "Index": 0,
+   "IsExternal": false,
+   "IsTextSubtitleStream": false,
+   "SupportsExternalStream": false,
+   "Protocol": "File",
+   "PixelFormat": "yuv420p",
+   "Level": -99,
+   "IsAnamorphic": false,
+   "ExtendedVideoType": "None",
+   "ExtendedVideoSubType": "None",
+   "ExtendedVideoSubTypeDescription": "None",
+   "AttachmentSize": 0
+  },
+  {
+   "Codec": "mp3",
+   "TimeBase": "1/12000",
+   "DisplayTitle": "DisplayTitle-21",
+   "IsInterlaced": false,
+   "ChannelLayout": "mono",
+   "BitRate": 96000,
+   "Channels": 1,
+   "SampleRate": 44100,
+   "IsDefault": false,
+   "IsForced": false,
+   "IsHearingImpaired": false,
+   "Type": "Audio",
+   "Index": 1,
+   "IsExternal": false,
+   "IsTextSubtitleStream": false,
+   "SupportsExternalStream": false,
+   "Protocol": "File",
+   "ExtendedVideoType": "None",
+   "ExtendedVideoSubType": "None",
+   "ExtendedVideoSubTypeDescription": "None",
+   "AttachmentSize": 0
+  }
+ ],
+ "PartCount": 1,
+ "ImageTags": {
+  "Primary": "d32274008bd97a6bb783eb0d85cfa621598e259a6de209bacb1"
+ },
+ "BackdropImageTags": [
+  "a5bb67763da3fe8a4ffec9d1559973c7f984b09132ae7a6aebc"
+ ],
+ "Chapters": [],
+ "MediaType": "Video",
+ "MimeType": "video/x-msvideo",
+ "LockedFields": [],
+ "LockData": false,
+ "Width": 576,
+ "Height": 432
+}

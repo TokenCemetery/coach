@@ -1,0 +1,62 @@
+{
+ "Items": [
+  {
+   "Name": "SeriesName-161",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "63663",
+   "DateCreated": "2025-11-02T09:11:27.0000000Z",
+   "SortName": "SeriesName-161",
+   "Overview": "Overview-162",
+   "Genres": [
+    "Genres-163",
+    "Genres-164",
+    "Genres-165",
+    "Genres-166",
+    "Genres-167"
+   ],
+   "RunTimeTicks": 8400000000,
+   "IsFolder": true,
+   "Type": "Series",
+   "GenreItems": [
+    {
+     "Name": "Genres-163",
+     "Id": 7326
+    },
+    {
+     "Name": "Genres-164",
+     "Id": 7327
+    },
+    {
+     "Name": "Genres-165",
+     "Id": 57983
+    },
+    {
+     "Name": "Genres-166",
+     "Id": 7328
+    },
+    {
+     "Name": "Genres-167",
+     "Id": 7329
+    }
+   ],
+   "UserData": {
+    "UnplayedItemCount": 65,
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "AirDays": [],
+   "ImageTags": {
+    "Primary": "c77f4ad2b81d71b7b10cc522fe2e081fce5fcb4ae45526c9993",
+    "Logo": "4ff957d91544d4422e7666ff4706478e1cade7e3d699de36047",
+    "Thumb": "6bec3c5aca966c748c095d838df288a36221c0850aa181daa8d",
+    "Banner": "0e802636bf393658e8b8277bf7339f517a3aca1dbbbabe331b5"
+   },
+   "BackdropImageTags": [
+    "67274c6bcce1af3a4429a2b2ecb2ab500d837034c7df0055b25"
+   ]
+  }
+ ],
+ "TotalRecordCount": 237
+}

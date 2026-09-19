@@ -1,0 +1,246 @@
+package server
+
+import (
+	"cmp"
+	"errors"
+	"net/http"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/TokenCemetery/coach/internal/media"
+	"github.com/TokenCemetery/coach/internal/state"
+)
+
+// rootID is the parent of every library. Emby uses a numeric string here; Coach
+// keeps its own opaque value because clients treat item IDs as opaque.
+const rootID = "root"
+
+func catalogQuery(r *http.Request) (map[string]string, error) {
+	query := map[string]string{}
+	for key, vv := range r.URL.Query() {
+		key = strings.ToLower(key)
+		for _, v := range vv {
+			if old, ok := query[key]; ok && old != v {
+				return nil, errors.New("conflicting query parameters")
+			}
+			query[key] = v
+		}
+	}
+	return query, nil
+}
+
+func member(list, value string) bool {
+	for _, item := range strings.Split(list, ",") {
+		if strings.EqualFold(strings.TrimSpace(item), value) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) catalogRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /users/{user}/views", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+		items := []any{}
+		if s.media != nil {
+			items = append(items, s.libraryDTO(s.store.Snapshot().ServerID, false))
+		}
+		respond(w, 200, object{"Items": items, "TotalRecordCount": len(items)})
+	}))
+	for _, path := range []string{"/items/root", "/users/{user}/items/root"} {
+		mux.HandleFunc("GET "+path, s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+			respond(w, 200, s.rootFolderDTO(s.store.Snapshot().ServerID))
+		}))
+	}
+	for _, path := range []string{"/items/{item}", "/users/{user}/items/{item}"} {
+		mux.HandleFunc("GET "+path, s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+			id := r.PathValue("item")
+			if s.media != nil {
+				snapshot := s.store.Snapshot()
+				if id == s.media.ID {
+					respond(w, 200, s.libraryDTO(snapshot.ServerID, true))
+					return
+				}
+				for _, item := range s.media.Items {
+					if item.ID == id {
+						respond(w, 200, s.movieDTO(item, snapshot.ServerID, snapshot.User.Items))
+						return
+					}
+				}
+			}
+			fail(w, 404, "NotFound")
+		}))
+	}
+	for _, path := range []string{"/items", "/users/{user}/items", "/users/{user}/items/latest"} {
+		latest := strings.HasSuffix(path, "/latest")
+		mux.HandleFunc("GET "+path, s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+			s.listItems(w, r, latest)
+		}))
+	}
+	s.extrasRoutes(mux)
+}
+
+// extrasRoutes answers the companion requests Emby Web makes on an item page.
+// Coach has none of this content, so each returns an empty result in the shape
+// the reference server uses; a 404 here leaves the page in an error state.
+func (s *Server) extrasRoutes(mux *http.ServeMux) {
+	known := func(r *http.Request) bool {
+		id := r.PathValue("item")
+		_, found := s.findItem(id)
+		return found || (s.media != nil && id == s.media.ID)
+	}
+	emptyPage := func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+		if !known(r) {
+			fail(w, 404, "NotFound")
+			return
+		}
+		respond(w, 200, object{"Items": []any{}, "TotalRecordCount": 0})
+	}
+	emptyArray := func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+		if !known(r) {
+			fail(w, 404, "NotFound")
+			return
+		}
+		respond(w, 200, []any{})
+	}
+	for _, path := range []string{"/users/{user}/items/{item}/intros", "/items/{item}/similar"} {
+		mux.HandleFunc("GET "+path, s.protect(emptyPage))
+	}
+	for _, path := range []string{"/users/{user}/items/{item}/localtrailers", "/users/{user}/items/{item}/specialfeatures", "/items/{item}/specialfeatures"} {
+		mux.HandleFunc("GET "+path, s.protect(emptyArray))
+	}
+	mux.HandleFunc("GET /items/{item}/thememedia", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+		if !known(r) {
+			fail(w, 404, "NotFound")
+			return
+		}
+		empty := object{"Items": []any{}, "TotalRecordCount": 0, "OwnerId": r.PathValue("item")}
+		respond(w, 200, object{"ThemeVideosResult": empty, "ThemeSongsResult": empty, "SoundtrackSongsResult": empty})
+	}))
+}
+
+func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest bool) {
+	query, err := catalogQuery(r)
+	if err != nil {
+		fail(w, 400, "InvalidQuery")
+		return
+	}
+	// Reject unsupported filters rather than returning a misleading unfiltered catalogue.
+	for key := range query {
+		switch key {
+		case "parentid", "recursive", "searchterm", "includeitemtypes", "excludeitemtypes", "mediatypes", "ids", "excludeitemids",
+			"startindex", "limit", "sortby", "sortorder", "isfolder", "isplayed", "isfavorite", "filters",
+			"fields", "enableimages", "enableimagetypes", "imagetypelimit", "enableuserdata", "enabletotalrecordcount", "groupitems",
+			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids":
+		default:
+			if !strings.HasPrefix(key, "x-emby-") {
+				fail(w, 400, "UnsupportedQuery")
+				return
+			}
+		}
+	}
+	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite"} {
+		query[key] = strings.ToLower(query[key])
+		if v := query[key]; v != "" && v != "true" && v != "false" {
+			fail(w, 400, "InvalidQuery")
+			return
+		}
+	}
+	for _, filter := range strings.Split(query["filters"], ",") {
+		if filter != "" && !member("IsUnplayed,IsPlayed,IsFavorite", filter) {
+			fail(w, 400, "UnsupportedFilter")
+			return
+		}
+	}
+	start, limit := 0, 100
+	if latest {
+		limit = 20
+	}
+	for key, target := range map[string]*int{"startindex": &start, "limit": &limit} {
+		if text, exists := query[key]; exists {
+			v, err := strconv.Atoi(text)
+			if err != nil || v < 0 || (key == "limit" && v > 1000) {
+				fail(w, 400, "InvalidPagination")
+				return
+			}
+			*target = v
+		}
+	}
+	sortBy, order := strings.ToLower(query["sortby"]), strings.ToLower(query["sortorder"])
+	if latest && sortBy == "" {
+		sortBy, order = "datecreated", "descending"
+	}
+	if sortBy == "" {
+		sortBy = "sortname"
+	}
+	if !member("sortname,name,datecreated,runtime", sortBy) || (order != "" && order != "ascending" && order != "descending") {
+		fail(w, 400, "UnsupportedSort")
+		return
+	}
+	snapshot := s.store.Snapshot()
+	serverID := snapshot.ServerID
+	// Select and paginate metadata before allocating response DTOs.
+	items := []*media.Item{}
+	isFolder := func(item *media.Item) bool { return s.media != nil && item.ID == s.media.ID }
+	if s.media != nil {
+		parent := query["parentid"]
+		root := parent == "" || parent == "root"
+		if root && query["recursive"] != "true" && !latest && query["ids"] == "" {
+			items = append(items, &media.Item{ID: s.media.ID, Name: "Movies"})
+		} else if root || parent == s.media.ID {
+			items = make([]*media.Item, 0, len(s.media.Items)+1)
+			for i := range s.media.Items {
+				items = append(items, &s.media.Items[i])
+			}
+			if query["ids"] != "" && root {
+				items = append(items, &media.Item{ID: s.media.ID, Name: "Movies"})
+			}
+		}
+	}
+	items = slices.DeleteFunc(items, func(item *media.Item) bool {
+		id, kind, folder := item.ID, "Movie", isFolder(item)
+		if folder {
+			kind = "CollectionFolder"
+		}
+		return (query["ids"] != "" && !member(query["ids"], id)) || member(query["excludeitemids"], id) ||
+			(query["includeitemtypes"] != "" && !member(query["includeitemtypes"], kind)) || member(query["excludeitemtypes"], kind) ||
+			(query["mediatypes"] != "" && (folder || !member(query["mediatypes"], "Video"))) ||
+			(query["isfolder"] != "" && (query["isfolder"] == "true") != folder) ||
+			!strings.Contains(strings.ToLower(item.Name), strings.ToLower(query["searchterm"])) ||
+			query["isplayed"] == "true" || query["isfavorite"] == "true" || member(query["filters"], "IsPlayed") || member(query["filters"], "IsFavorite")
+	})
+	slices.SortFunc(items, func(a, b *media.Item) int {
+		comparison := 0
+		switch sortBy {
+		case "datecreated":
+			comparison = a.Modified.Compare(b.Modified)
+		case "runtime":
+			comparison = cmp.Compare(a.RunTimeTicks, b.RunTimeTicks)
+		default:
+			comparison = strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+		}
+		if comparison == 0 {
+			comparison = strings.Compare(a.ID, b.ID)
+		}
+		if order == "descending" {
+			return -comparison
+		}
+		return comparison
+	})
+	total := len(items)
+	start = min(start, total)
+	items = items[start : start+min(limit, total-start)]
+	result := make([]object, 0, len(items))
+	for _, item := range items {
+		if isFolder(item) {
+			result = append(result, s.libraryDTO(serverID, false))
+		} else {
+			result = append(result, s.movieDTO(*item, serverID, snapshot.User.Items))
+		}
+	}
+	if latest {
+		respond(w, 200, result)
+	} else {
+		respond(w, 200, object{"Items": result, "TotalRecordCount": total})
+	}
+}

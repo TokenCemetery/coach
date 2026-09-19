@@ -1,0 +1,64 @@
+{
+ "Items": [
+  {
+   "Name": "Name-5",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "64565",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 83796480000,
+   "ProductionYear": 2024,
+   "IsFolder": false,
+   "Type": "Movie",
+   "UserData": {
+    "PlayedPercentage": 13.712800025729004,
+    "PlaybackPositionTicks": 11490843731,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "PrimaryImageAspectRatio": 0.6666666666666666,
+   "ImageTags": {
+    "Primary": "3d48f0263d01989982436cc30f23e332a8059f3cfe46fb2cf2c",
+    "Logo": "068c7224dd669c84694d8dfbe9d5b940067bb66b0dba408af57"
+   },
+   "BackdropImageTags": [
+    "00308de7c0c0aea244f4c41509e95701d4f0f04e4cc052c6dda"
+   ],
+   "MediaType": "Video"
+  },
+  {
+   "Name": "Name-6",
+   "ServerId": "26c273cd435d6b2d4a9bcd45cce2e017",
+   "Id": "145212",
+   "CanDelete": false,
+   "CanDownload": true,
+   "SupportsSync": true,
+   "RunTimeTicks": 28592730830,
+   "ProductionYear": 2026,
+   "IndexNumber": 1,
+   "ParentIndexNumber": 1,
+   "IsFolder": false,
+   "Type": "Episode",
+   "UserData": {
+    "PlayedPercentage": 29.60301361323311,
+    "PlaybackPositionTicks": 8464310000,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false
+   },
+   "SeriesName": "SeriesName-7",
+   "SeriesId": "145158",
+   "SeasonId": "145214",
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "SeasonName": "SeasonName-8",
+   "ImageTags": {
+    "Primary": "ddd77fc3b260f76bccd287417d5f204dbea40d40fe72c6bf8dc"
+   },
+   "BackdropImageTags": [],
+   "MediaType": "Video"
+  }
+ ],
+ "TotalRecordCount": 2
+}
