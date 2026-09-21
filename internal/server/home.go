@@ -69,7 +69,7 @@ func (s *Server) homeSections(serverID string) []object {
 // sectionItems answers /Users/{id}/Sections/{section}/Items. Emby Web does not
 // build a query per home row itself: it asks the server to fill each section it
 // was given, so every section id advertised by homeSections must be answerable.
-func (s *Server) sectionItems(w http.ResponseWriter, r *http.Request) {
+func (s *Server) sectionItems(w http.ResponseWriter, r *http.Request, token string) {
 	section := strings.ToLower(r.PathValue("section"))
 	limit := 12
 	if text := r.URL.Query().Get("Limit"); text != "" {
@@ -89,7 +89,7 @@ func (s *Server) sectionItems(w http.ResponseWriter, r *http.Request) {
 			items = append(items, s.collectionDTO(id, serverID, false))
 		}
 	case section == "resume":
-		items = s.resumeItems(limit)
+		items = s.resumeItems(limit, token)
 	case section == "resumeaudio":
 		// Coach serves no audio library, so this row is always empty.
 	case strings.HasPrefix(section, "latestmedia_") && slices.Contains(s.libraryIDs(), strings.TrimPrefix(section, "latestmedia_")):
@@ -107,7 +107,7 @@ func (s *Server) sectionItems(w http.ResponseWriter, r *http.Request) {
 			return strings.Compare(a.ID, b.ID)
 		})
 		for _, item := range latest[:min(limit, len(latest))] {
-			items = append(items, s.movieDTO(*item, serverID, snapshot.User.Items))
+			items = append(items, s.movieDTO(*item, serverID, snapshot.User.Items, token))
 		}
 	default:
 		fail(w, 404, "NotFound")
@@ -124,6 +124,6 @@ func (s *Server) homeRoutes(mux *http.ServeMux) {
 		respond(w, 200, s.homeSections(s.store.Snapshot().ServerID))
 	}))
 	mux.HandleFunc("GET /users/{user}/sections/{section}/items", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
-		s.sectionItems(w, r)
+		s.sectionItems(w, r, token)
 	}))
 }

@@ -287,7 +287,7 @@ func (s *Server) setItemFlag(favorite, value bool) authenticated {
 }
 
 // resumeItems lists items with meaningful stored progress, most recent first.
-func (s *Server) resumeItems(limit int) []object {
+func (s *Server) resumeItems(limit int, token string) []object {
 	snapshot := s.store.Snapshot()
 	serverID := snapshot.ServerID
 	candidates := []*media.Item{}
@@ -307,7 +307,7 @@ func (s *Server) resumeItems(limit int) []object {
 	})
 	result := []object{}
 	for _, item := range candidates[:min(limit, len(candidates))] {
-		result = append(result, s.movieDTO(*item, serverID, snapshot.User.Items))
+		result = append(result, s.movieDTO(*item, serverID, snapshot.User.Items, token))
 	}
 	return result
 }

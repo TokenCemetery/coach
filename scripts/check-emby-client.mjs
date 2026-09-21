@@ -24,6 +24,7 @@ const sources = {};
 const sockets = new Set();
 const messages = [];
 let mediaDirectory;
+let posterURL;
 
 async function waitFor(predicate, description) {
   const deadline = Date.now() + 5000;
@@ -52,6 +53,10 @@ async function createMedia() {
     '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-t', '1', '-c:v', 'mpeg4', '-c:a', 'aac', '-threads', '1', movie],
     { stdio: ['ignore', 'ignore', 'ignore'], timeout: 15000 });
   assert.equal((await once(encoder, 'exit'))[0], 0, 'generate synthetic movie');
+  const poster = spawn('ffmpeg', ['-v', 'error', '-nostdin', '-f', 'lavfi', '-i', 'color=c=blue:s=48x72',
+    '-frames:v', '1', '-threads', '1', path.join(mediaDirectory, 'Sample-poster.png')],
+    { stdio: ['ignore', 'ignore', 'ignore'], timeout: 15000 });
+  assert.equal((await once(poster, 'exit'))[0], 0, 'generate synthetic poster');
   const season = path.join(mediaDirectory, 'Show', 'Season 01');
   await mkdir(season, { recursive: true });
   await copyFile(movie, path.join(season, 'Show.S01E01.mp4'));
@@ -205,7 +210,21 @@ try {
     assert.equal(movie.MediaStreams.find(s => s.Type === 'Video').Width, 64);
     assert.equal(movie.MediaStreams.find(s => s.Type === 'Audio').SampleRate, 48000);
     assert.equal(movie.Path, undefined, 'host path must not be exposed');
+    posterURL = mediaClient.getImageUrl(movieId, { type: 'Primary', tag: movie.ImageTags.Primary, maxWidth: 160 });
+    const posterResponse = await fetch(posterURL, { signal: AbortSignal.timeout(15000) });
+    assert.equal(posterResponse.status, 200);
+    assert.equal(posterResponse.headers.get('content-type'), 'image/png');
+    assert.deepEqual(Buffer.from(await posterResponse.arrayBuffer()), await readFile(path.join(mediaDirectory, 'Sample-poster.png')));
+    const unsignedPoster = new URL(posterURL);
+    unsignedPoster.searchParams.delete('tag');
+    const deniedPoster = await fetch(unsignedPoster, { signal: AbortSignal.timeout(15000) });
+    assert.equal(deniedPoster.status, 401);
+    await deniedPoster.arrayBuffer();
+    mediaChecks.push('original ApiClient signed image URL and unsigned denial');
     assert.equal((await mediaClient.getItems(user.Id, { Recursive: true, SearchTerm: 'sam' })).TotalRecordCount, 1);
+    const search = await mediaClient.getSearchResults({ Recursive: true, SearchTerm: 'sam', GroupProgramsBySeries: true, IncludeSearchTypes: true });
+    assert.equal(search.Items[0].Id, movieId);
+    assert.deepEqual(Array.from(search.ItemTypes, type => type.Name), ['Movie']);
     assert.equal((await mediaClient.getItems(user.Id, { ParentId: libraryId, StartIndex: 1 })).Items.length, 0);
     assert.equal((await mediaClient.getLatestItems({ ParentId: libraryId, Limit: 1 }))[0].Id, movieId);
     // Exercise delivery and saved progress against Coach only; the reference
@@ -298,6 +317,10 @@ try {
     assert.equal((await mediaClient.getItem(user.Id, episode.Id)).SeriesId, showId);
     assert.equal((await mediaClient.getSeasons(showId, { UserId: user.Id })).Items[0].Id, seasons.Items[0].Id);
     const resumed = await mediaClient.getItem(user.Id, movieId);
+    assert.ok(resumed.ImageTags.Primary === movie.ImageTags.Primary, 'signed image survives restart');
+    const restoredPoster = await fetch(posterURL, { signal: AbortSignal.timeout(15000) });
+    assert.equal(restoredPoster.status, 200);
+    await restoredPoster.arrayBuffer();
     assert.equal(resumed.UserData.PlaybackPositionTicks, 2500000);
     const resumeResponse = await localAPI(`Users/${user.Id}/Items/Resume`);
     assert.equal(resumeResponse.status, 200);
@@ -314,6 +337,12 @@ try {
     mediaChecks.push('FFprobe video/audio metadata', 'movie views/list/detail', 'search/pagination/latest', 'broken file isolation', 'restart stable movie ID', 'source unchanged', 'original ApiClient PlaybackInfo query/profile negotiation', 'stream bytes/HEAD/Range/416/401', 'progress/resume after restart', 'watched at end', 'original ApiClient UserDataChanged favorites/progress/played', 'web socket shutdown and reconnect');
   }
   await restored.logout();
+  if (posterURL) {
+    const revoked = await fetch(posterURL, { signal: AbortSignal.timeout(15000) });
+    assert.equal(revoked.status, 401, 'logout must revoke image URL');
+    await revoked.arrayBuffer();
+    mediaChecks.push('signed image restart and logout revocation');
+  }
   await waitFor(() => sockets.size === 0, 'logout revokes sibling web socket');
   const denied = await fetch(`${origin}/emby/Users/${user.Id}`, { headers: { 'X-Emby-Token': auth.AccessToken } });
   assert.equal(denied.status, 401);

@@ -158,7 +158,7 @@ func (s *Server) childCount(id string) int {
 	return count
 }
 
-func (s *Server) movieDTO(item media.Item, serverID string, items map[string]state.ItemState) object {
+func (s *Server) movieDTO(item media.Item, serverID string, items map[string]state.ItemState, token string) object {
 	dto := baseFields(item.ID, item.Name, item.Type(), serverID)
 	dto["DateCreated"] = embyDate(item.Modified)
 	dto["DateModified"] = embyDate(item.Modified)
@@ -167,6 +167,12 @@ func (s *Server) movieDTO(item media.Item, serverID string, items map[string]sta
 	dto["GenreItems"] = []any{}
 	dto["TagItems"] = []any{}
 	dto["UserData"] = itemUserData(items[item.ID], item.RunTimeTicks)
+	if info, found := s.media.PrimaryImage(item); found {
+		if tag := s.store.ImageTag(token, item.ID, info.Revision); tag != "" {
+			dto["ImageTags"] = object{"Primary": tag}
+			dto["PrimaryImageAspectRatio"] = float64(info.Width) / float64(info.Height)
+		}
+	}
 	if item.SeriesID != "" {
 		dto["SeriesId"], dto["SeriesName"] = item.SeriesID, item.SeriesName
 	}
@@ -202,7 +208,9 @@ func (s *Server) movieDTO(item media.Item, serverID string, items map[string]sta
 	dto["MediaSources"] = []object{mediaSource(item, streams)}
 	if w, h := videoSize(item); w > 0 && h > 0 {
 		dto["Width"], dto["Height"] = w, h
-		dto["PrimaryImageAspectRatio"] = float64(w) / float64(h)
+		if _, exists := dto["PrimaryImageAspectRatio"]; !exists {
+			dto["PrimaryImageAspectRatio"] = float64(w) / float64(h)
+		}
 	}
 	return dto
 }

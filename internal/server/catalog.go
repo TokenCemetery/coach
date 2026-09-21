@@ -63,7 +63,7 @@ func (s *Server) catalogRoutes(mux *http.ServeMux) {
 					return
 				}
 				if item, found := s.findItem(id); found {
-					respond(w, 200, s.movieDTO(item, snapshot.ServerID, snapshot.User.Items))
+					respond(w, 200, s.movieDTO(item, snapshot.ServerID, snapshot.User.Items, token))
 					return
 				}
 			}
@@ -78,6 +78,10 @@ func (s *Server) catalogRoutes(mux *http.ServeMux) {
 	}
 	s.extrasRoutes(mux)
 	s.seriesRoutes(mux)
+	s.imageRoutes(mux)
+	mux.HandleFunc("GET /itemtypes", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+		s.listItems(w, r, false, false)
+	}))
 }
 
 // extrasRoutes answers the companion requests Emby Web makes on an item page.
@@ -120,6 +124,8 @@ func (s *Server) extrasRoutes(mux *http.ServeMux) {
 }
 
 func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resume bool) {
+	token, _ := requestToken(r) // Callers have already authenticated this request.
+	typesOnly := r.URL.Path == "/itemtypes"
 	query, err := catalogQuery(r)
 	if err != nil {
 		fail(w, 400, "InvalidQuery")
@@ -131,6 +137,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 		case "parentid", "recursive", "searchterm", "includeitemtypes", "excludeitemtypes", "mediatypes", "ids", "excludeitemids",
 			"startindex", "limit", "sortby", "sortorder", "isfolder", "isplayed", "isfavorite", "filters",
 			"fields", "enableimages", "enableimagetypes", "imagetypelimit", "enableuserdata", "enabletotalrecordcount", "groupitems",
+			"groupprogramsbyseries", "includesearchtypes",
 			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids":
 		default:
 			if !strings.HasPrefix(key, "x-emby-") {
@@ -139,7 +146,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			}
 		}
 	}
-	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite"} {
+	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite", "groupprogramsbyseries", "includesearchtypes"} {
 		query[key] = strings.ToLower(query[key])
 		if v := query[key]; v != "" && v != "true" && v != "false" {
 			fail(w, 400, "InvalidQuery")
@@ -158,6 +165,9 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 	}
 	if resume {
 		limit = 24
+		query["recursive"] = "true"
+	}
+	if typesOnly {
 		query["recursive"] = "true"
 	}
 	for key, target := range map[string]*int{"startindex": &start, "limit": &limit} {
@@ -238,6 +248,26 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			(member(query["filters"], "IsUnplayed") && st.Played) ||
 			(member(query["filters"], "IsFavorite") && !st.IsFavorite)
 	})
+	if typesOnly {
+		// Search tabs describe the full filtered result, independent of its page.
+		names := []string{}
+		for _, item := range items {
+			kind := item.Type()
+			if isCollection(item) {
+				kind = "CollectionFolder"
+			}
+			if !slices.Contains(names, kind) {
+				names = append(names, kind)
+			}
+		}
+		slices.Sort(names)
+		result := make([]object, 0, len(names))
+		for _, name := range names {
+			result = append(result, object{"Name": name})
+		}
+		respond(w, 200, object{"Items": result, "TotalRecordCount": len(result)})
+		return
+	}
 	slices.SortFunc(items, func(a, b *media.Item) int {
 		comparison := 0
 		switch sortBy {
@@ -271,7 +301,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 		if isCollection(item) {
 			result = append(result, s.collectionDTO(item.ID, serverID, false))
 		} else {
-			result = append(result, s.movieDTO(*item, serverID, snapshot.User.Items))
+			result = append(result, s.movieDTO(*item, serverID, snapshot.User.Items, token))
 		}
 	}
 	if latest {
