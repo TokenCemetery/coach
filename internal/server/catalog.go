@@ -42,8 +42,9 @@ func member(list, value string) bool {
 func (s *Server) catalogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /users/{user}/views", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		items := []any{}
-		if s.media != nil {
-			items = append(items, s.libraryDTO(s.store.Snapshot().ServerID, false))
+		serverID := s.store.Snapshot().ServerID
+		for _, id := range s.libraryIDs() {
+			items = append(items, s.collectionDTO(id, serverID, false))
 		}
 		respond(w, 200, object{"Items": items, "TotalRecordCount": len(items)})
 	}))
@@ -57,15 +58,13 @@ func (s *Server) catalogRoutes(mux *http.ServeMux) {
 			id := r.PathValue("item")
 			if s.media != nil {
 				snapshot := s.store.Snapshot()
-				if id == s.media.ID {
-					respond(w, 200, s.libraryDTO(snapshot.ServerID, true))
+				if id == s.media.ID || (len(s.media.Folders) > 0 && id == s.media.SeriesLibraryID()) {
+					respond(w, 200, s.collectionDTO(id, snapshot.ServerID, true))
 					return
 				}
-				for _, item := range s.media.Items {
-					if item.ID == id {
-						respond(w, 200, s.movieDTO(item, snapshot.ServerID, snapshot.User.Items))
-						return
-					}
+				if item, found := s.findItem(id); found {
+					respond(w, 200, s.movieDTO(item, snapshot.ServerID, snapshot.User.Items))
+					return
 				}
 			}
 			fail(w, 404, "NotFound")
@@ -74,10 +73,11 @@ func (s *Server) catalogRoutes(mux *http.ServeMux) {
 	for _, path := range []string{"/items", "/users/{user}/items", "/users/{user}/items/latest"} {
 		latest := strings.HasSuffix(path, "/latest")
 		mux.HandleFunc("GET "+path, s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
-			s.listItems(w, r, latest)
+			s.listItems(w, r, latest, false)
 		}))
 	}
 	s.extrasRoutes(mux)
+	s.seriesRoutes(mux)
 }
 
 // extrasRoutes answers the companion requests Emby Web makes on an item page.
@@ -87,7 +87,7 @@ func (s *Server) extrasRoutes(mux *http.ServeMux) {
 	known := func(r *http.Request) bool {
 		id := r.PathValue("item")
 		_, found := s.findItem(id)
-		return found || (s.media != nil && id == s.media.ID)
+		return found || slices.Contains(s.libraryIDs(), id)
 	}
 	emptyPage := func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		if !known(r) {
@@ -119,7 +119,7 @@ func (s *Server) extrasRoutes(mux *http.ServeMux) {
 	}))
 }
 
-func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest bool) {
+func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resume bool) {
 	query, err := catalogQuery(r)
 	if err != nil {
 		fail(w, 400, "InvalidQuery")
@@ -156,6 +156,10 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest bool) 
 	if latest {
 		limit = 20
 	}
+	if resume {
+		limit = 24
+		query["recursive"] = "true"
+	}
 	for key, target := range map[string]*int{"startindex": &start, "limit": &limit} {
 		if text, exists := query[key]; exists {
 			v, err := strconv.Atoi(text)
@@ -170,10 +174,13 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest bool) 
 	if latest && sortBy == "" {
 		sortBy, order = "datecreated", "descending"
 	}
+	if resume && sortBy == "" {
+		sortBy, order = "dateplayed", "descending"
+	}
 	if sortBy == "" {
 		sortBy = "sortname"
 	}
-	if !member("sortname,name,datecreated,runtime", sortBy) || (order != "" && order != "ascending" && order != "descending") {
+	if (!member("sortname,name,datecreated,dateplayed,runtime,indexnumber", sortBy) && sortBy != "parentindexnumber,indexnumber") || (order != "" && order != "ascending" && order != "descending") {
 		fail(w, 400, "UnsupportedSort")
 		return
 	}
@@ -181,41 +188,70 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest bool) 
 	serverID := snapshot.ServerID
 	// Select and paginate metadata before allocating response DTOs.
 	items := []*media.Item{}
-	isFolder := func(item *media.Item) bool { return s.media != nil && item.ID == s.media.ID }
+	isCollection := func(item *media.Item) bool {
+		return s.media != nil && (item.ID == s.media.ID || item.ID == s.media.SeriesLibraryID())
+	}
 	if s.media != nil {
 		parent := query["parentid"]
 		root := parent == "" || parent == "root"
 		if root && query["recursive"] != "true" && !latest && query["ids"] == "" {
 			items = append(items, &media.Item{ID: s.media.ID, Name: "Movies"})
-		} else if root || parent == s.media.ID {
+			if len(s.media.Folders) > 0 {
+				items = append(items, &media.Item{ID: s.media.SeriesLibraryID(), Name: "TV Shows"})
+			}
+		} else {
 			items = make([]*media.Item, 0, len(s.media.Items)+1)
-			for i := range s.media.Items {
-				items = append(items, &s.media.Items[i])
+			for _, candidates := range [][]media.Item{s.media.Items, s.media.Folders} {
+				for i := range candidates {
+					item := &candidates[i]
+					if (latest || resume) && item.IsFolder() {
+						continue
+					}
+					if root || s.media.Parent(*item) == parent || ((query["recursive"] == "true" || latest || resume) && (item.SeriesID == parent || (parent == s.media.SeriesLibraryID() && item.Type() != "Movie"))) {
+						items = append(items, item)
+					}
+				}
 			}
 			if query["ids"] != "" && root {
 				items = append(items, &media.Item{ID: s.media.ID, Name: "Movies"})
+				if len(s.media.Folders) > 0 {
+					items = append(items, &media.Item{ID: s.media.SeriesLibraryID(), Name: "TV Shows"})
+				}
 			}
 		}
 	}
 	items = slices.DeleteFunc(items, func(item *media.Item) bool {
-		id, kind, folder := item.ID, "Movie", isFolder(item)
-		if folder {
+		id, kind, folder := item.ID, item.Type(), item.IsFolder() || isCollection(item)
+		st := snapshot.User.Items[id]
+		if isCollection(item) {
 			kind = "CollectionFolder"
 		}
 		return (query["ids"] != "" && !member(query["ids"], id)) || member(query["excludeitemids"], id) ||
+			(resume && !resumable(st, item.RunTimeTicks)) ||
 			(query["includeitemtypes"] != "" && !member(query["includeitemtypes"], kind)) || member(query["excludeitemtypes"], kind) ||
 			(query["mediatypes"] != "" && (folder || !member(query["mediatypes"], "Video"))) ||
 			(query["isfolder"] != "" && (query["isfolder"] == "true") != folder) ||
 			!strings.Contains(strings.ToLower(item.Name), strings.ToLower(query["searchterm"])) ||
-			query["isplayed"] == "true" || query["isfavorite"] == "true" || member(query["filters"], "IsPlayed") || member(query["filters"], "IsFavorite")
+			(query["isplayed"] != "" && (query["isplayed"] == "true") != st.Played) ||
+			(query["isfavorite"] != "" && (query["isfavorite"] == "true") != st.IsFavorite) ||
+			(member(query["filters"], "IsPlayed") && !st.Played) ||
+			(member(query["filters"], "IsUnplayed") && st.Played) ||
+			(member(query["filters"], "IsFavorite") && !st.IsFavorite)
 	})
 	slices.SortFunc(items, func(a, b *media.Item) int {
 		comparison := 0
 		switch sortBy {
 		case "datecreated":
 			comparison = a.Modified.Compare(b.Modified)
+		case "dateplayed":
+			comparison = snapshot.User.Items[a.ID].LastPlayed.Compare(snapshot.User.Items[b.ID].LastPlayed)
 		case "runtime":
 			comparison = cmp.Compare(a.RunTimeTicks, b.RunTimeTicks)
+		case "indexnumber", "parentindexnumber,indexnumber":
+			comparison = cmp.Compare(a.SeasonNumber, b.SeasonNumber)
+			if comparison == 0 {
+				comparison = cmp.Compare(a.EpisodeNumber, b.EpisodeNumber)
+			}
 		default:
 			comparison = strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 		}
@@ -232,8 +268,8 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest bool) 
 	items = items[start : start+min(limit, total-start)]
 	result := make([]object, 0, len(items))
 	for _, item := range items {
-		if isFolder(item) {
-			result = append(result, s.libraryDTO(serverID, false))
+		if isCollection(item) {
+			result = append(result, s.collectionDTO(item.ID, serverID, false))
 		} else {
 			result = append(result, s.movieDTO(*item, serverID, snapshot.User.Items))
 		}

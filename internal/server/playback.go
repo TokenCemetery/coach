@@ -39,7 +39,7 @@ func bitrate(item media.Item) int64 {
 
 func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 	item, found := s.findItem(r.PathValue("item"))
-	if !found {
+	if !found || item.IsFolder() {
 		fail(w, 404, "NotFound")
 		return
 	}
@@ -117,9 +117,11 @@ func (s *Server) findItem(id string) (media.Item, bool) {
 	if s.media == nil || id == "" {
 		return media.Item{}, false
 	}
-	for _, item := range s.media.Items {
-		if item.ID == id {
-			return item, true
+	for _, items := range [][]media.Item{s.media.Items, s.media.Folders} {
+		for _, item := range items {
+			if item.ID == id {
+				return item, true
+			}
 		}
 	}
 	return media.Item{}, false
@@ -135,7 +137,7 @@ func (s *Server) streamVideo(w http.ResponseWriter, r *http.Request, token strin
 		return
 	}
 	item, found := s.findItem(r.PathValue("item"))
-	if !found {
+	if !found || item.IsFolder() {
 		fail(w, 404, "NotFound")
 		return
 	}
@@ -153,6 +155,7 @@ func (s *Server) streamVideo(w http.ResponseWriter, r *http.Request, token strin
 type playstateReport struct {
 	ItemId        string
 	PositionTicks *int64
+	PlaySessionId string
 }
 
 // reportPlaystate records progress. A report for an unknown item is refused
@@ -167,12 +170,20 @@ func (s *Server) reportPlaystate(event string) authenticated {
 		if body.ItemId == "" {
 			body.ItemId = value(r, "ItemId")
 		}
+		if body.PlaySessionId == "" {
+			body.PlaySessionId = value(r, "PlaySessionId")
+		}
+		if len(body.PlaySessionId) > 128 {
+			fail(w, 400, "InvalidRequest")
+			return
+		}
 		item, found := s.findItem(body.ItemId)
-		if !found {
+		if !found || item.IsFolder() {
 			fail(w, 404, "NotFound")
 			return
 		}
 		position := int64(0)
+		hasPosition := body.PositionTicks != nil
 		if body.PositionTicks != nil {
 			position = *body.PositionTicks
 		} else if text := value(r, "PositionTicks"); text != "" {
@@ -182,12 +193,22 @@ func (s *Server) reportPlaystate(event string) authenticated {
 				return
 			}
 			position = parsed
+			hasPosition = true
 		}
-		if position < 0 || (item.RunTimeTicks > 0 && position > item.RunTimeTicks) {
-			position = min(max(position, 0), item.RunTimeTicks)
+		if position < 0 {
+			fail(w, 400, "InvalidRequest")
+			return
 		}
-		_, err := s.updateItem(token, item, func(st *state.ItemState) {
-			st.PositionTicks = position
+		if item.RunTimeTicks > 0 {
+			position = min(position, item.RunTimeTicks)
+		}
+		_, err := s.updateItemSession(token, item, func(st *state.ItemState, current *state.Session) {
+			if !acceptPlayReport(current, item.ID, body.PlaySessionId, event) {
+				return
+			}
+			if hasPosition {
+				st.PositionTicks = position
+			}
 			st.LastPlayed = time.Now().UTC()
 			switch event {
 			case "start":
@@ -195,13 +216,44 @@ func (s *Server) reportPlaystate(event string) authenticated {
 			case "stop":
 				// Finishing the tail of a file counts as watched, and the
 				// stored position is cleared so it does not resume at the end.
-				if item.RunTimeTicks > 0 && position >= item.RunTimeTicks*90/100 {
+				if item.RunTimeTicks > 0 && st.PositionTicks >= item.RunTimeTicks-item.RunTimeTicks/10 {
 					st.Played, st.PositionTicks = true, 0
 				}
 			}
 		})
 		s.changed(w, err)
 	}
+}
+
+// ID-bearing reports use a durable 64-start retry window per client session.
+// Only the newest start accepts progress/stop; a completed play cannot reopen.
+// Legacy reports without an ID retain arrival-order semantics.
+func acceptPlayReport(session *state.Session, itemID, playID, event string) bool {
+	if playID == "" {
+		return true
+	}
+	index := slices.IndexFunc(session.RecentPlays, func(p state.PlaybackRecord) bool { return p.ID == playID })
+	if event == "start" {
+		if index >= 0 {
+			return false
+		}
+		if len(session.RecentPlays) >= 64 {
+			session.RecentPlays = slices.Clone(session.RecentPlays[len(session.RecentPlays)-63:])
+		}
+		session.RecentPlays = append(session.RecentPlays, state.PlaybackRecord{ID: playID, ItemID: itemID})
+		return true
+	}
+	if index < 0 || index != len(session.RecentPlays)-1 {
+		return false
+	}
+	play := &session.RecentPlays[index]
+	if play.Stopped || play.ItemID != itemID {
+		return false
+	}
+	if event == "stop" {
+		play.Stopped = true
+	}
+	return true
 }
 
 // setItemFlag backs the played and favourite toggles, which answer with the
@@ -274,8 +326,7 @@ func (s *Server) playbackRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("DELETE "+path, s.protect(s.setItemFlag(favorite, false)))
 	}
 	mux.HandleFunc("GET /users/{user}/items/resume", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
-		items := s.resumeItems(24)
-		respond(w, 200, object{"Items": items, "TotalRecordCount": len(items)})
+		s.listItems(w, r, false, true)
 	}))
 	mux.HandleFunc("POST /items/{item}/playbackinfo", s.protect(s.playbackInfo))
 	// Emby also answers GET for clients that cannot post a profile.

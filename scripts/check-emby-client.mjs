@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomBytes, createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,7 +21,28 @@ let child;
 const paths = new Set();
 const pending = new Set();
 const sources = {};
+const sockets = new Set();
+const messages = [];
 let mediaDirectory;
+
+async function waitFor(predicate, description) {
+  const deadline = Date.now() + 5000;
+  while (!predicate()) {
+    assert.ok(Date.now() < deadline, `timeout: ${description}`);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
+
+class LocalWebSocket extends WebSocket {
+  constructor(url) {
+    const target = new URL(url);
+    assert.ok(target.protocol === 'ws:' && target.host === new URL(origin).host && target.pathname === '/embywebsocket',
+      'web socket must stay on the temporary Go server');
+    super(url);
+    sockets.add(this);
+    this.addEventListener('close', () => sockets.delete(this));
+  }
+}
 
 async function createMedia() {
   mediaDirectory = path.join(data, 'movies');
@@ -31,6 +52,10 @@ async function createMedia() {
     '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-t', '1', '-c:v', 'mpeg4', '-c:a', 'aac', '-threads', '1', movie],
     { stdio: ['ignore', 'ignore', 'ignore'], timeout: 15000 });
   assert.equal((await once(encoder, 'exit'))[0], 0, 'generate synthetic movie');
+  const season = path.join(mediaDirectory, 'Show', 'Season 01');
+  await mkdir(season, { recursive: true });
+  await copyFile(movie, path.join(season, 'Show.S01E01.mp4'));
+  await copyFile(movie, path.join(season, 'Show.S01E02.mp4'));
   await writeFile(path.join(mediaDirectory, 'Broken.mkv'), 'not a video');
   return createHash('sha256').update(await readFile(movie)).digest('hex');
 }
@@ -54,6 +79,7 @@ function loadAMD(code, dependencies) {
       }));
     },
     URL, URLSearchParams, AbortSignal, AbortController, setTimeout, clearTimeout,
+    WebSocket: LocalWebSocket,
     console: quiet,
     fetch(url, options) {
       const target = new URL(url);
@@ -88,6 +114,7 @@ async function stop() {
     const done = once(child, 'exit');
     child.kill('SIGTERM');
     await done;
+    await waitFor(() => sockets.size === 0, 'web sockets close on server shutdown');
   }
 }
 
@@ -116,7 +143,9 @@ try {
     appHost: { supports: () => false },
   };
   const { default: ApiClient } = loadAMD(await source('web/modules/emby-apiclient/apiclient.js'), {
-    './events.js': { default: { trigger() {} } },
+    './events.js': { default: { trigger(instance, event, args) {
+      if (event === 'message') messages.push({ instance, message: args[0] });
+    } } },
     './../common/servicelocator.js': locator,
     './../common/querystring.js': query,
     './../common/qualitydetection.js': { default: {} },
@@ -164,7 +193,7 @@ try {
     const mediaClient = client(info);
     mediaClient.setAuthenticationInfo({ UserId: user.Id, AccessToken: auth.AccessToken });
     const movieViews = await mediaClient.getUserViews({}, user.Id);
-    assert.equal(movieViews.Items.length, 1);
+    assert.equal(movieViews.Items.length, 2);
     assert.equal(movieViews.Items[0].CollectionType, 'movies');
     const libraryId = movieViews.Items[0].Id;
     const movies = await mediaClient.getItems(user.Id, { ParentId: libraryId, IncludeItemTypes: 'Movie', Recursive: true, SortBy: 'SortName', Limit: 10 });
@@ -186,6 +215,23 @@ try {
       signal: AbortSignal.timeout(15000), redirect: 'error',
     });
     const profile = { DirectPlayProfiles: [{ Type: 'Video', Container: 'mp4', VideoCodec: 'mpeg4', AudioCodec: 'aac' }] };
+    const tv = movieViews.Items.find(view => view.CollectionType === 'tvshows');
+    assert.ok(tv, 'series library advertised');
+    const shows = await mediaClient.getItems(user.Id, { ParentId: tv.Id, IncludeItemTypes: 'Series' });
+    assert.equal(shows.Items.length, 1);
+    const showId = shows.Items[0].Id;
+    const seasons = await mediaClient.getSeasons(showId, { UserId: user.Id });
+    assert.equal(seasons.Items.length, 1);
+    const episodes = await mediaClient.getEpisodes(showId, { UserId: user.Id, SeasonId: seasons.Items[0].Id });
+    assert.deepEqual(Array.from(episodes.Items, item => item.IndexNumber), [1, 2]);
+    const episode = await mediaClient.getItem(user.Id, episodes.Items[0].Id);
+    assert.equal(episode.Type, 'Episode');
+    assert.equal(episode.SeriesId, showId);
+    const episodePlayback = await mediaClient.getPlaybackInfo(episode.Id, { UserId: user.Id }, profile);
+    const episodeStream = await fetch(mediaClient.getUrl(episodePlayback.MediaSources[0].DirectStreamUrl), { signal: AbortSignal.timeout(15000) });
+    assert.equal(episodeStream.status, 200);
+    assert.equal(createHash('sha256').update(Buffer.from(await episodeStream.arrayBuffer())).digest('hex'), sourceHash);
+    mediaChecks.push('original ApiClient series/seasons/episodes', 'episode PlaybackInfo and source bytes');
     const playback = await mediaClient.getPlaybackInfo(movieId, { UserId: user.Id, EnableDirectStream: true, SubtitleStreamIndex: -1 }, profile);
     for (const [options, deviceProfile] of [
       [{ EnableDirectStream: false }, profile],
@@ -221,33 +267,54 @@ try {
     const unauthorizedStream = await fetch(withoutToken, { signal: AbortSignal.timeout(15000) });
     assert.equal(unauthorizedStream.status, 401);
     await unauthorizedStream.arrayBuffer();
-    for (const event of ['Playing', 'Playing/Progress', 'Playing/Stopped']) {
-      const report = await localAPI(`Sessions/${event}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ItemId: movieId, PositionTicks: 2500000 }),
-      });
-      assert.equal(report.status, 204);
+    async function connectEvents() {
+      const offset = messages.length;
+      mediaClient.openWebSocket();
+      await waitFor(() => messages.slice(offset).some(e => e.instance === mediaClient && e.message.MessageType === 'ForceKeepAlive'), 'original client web socket handshake');
+    }
+    async function expectChange(offset, field, value) {
+      await waitFor(() => messages.slice(offset).some(e => e.instance === mediaClient &&
+        e.message.MessageType === 'UserDataChanged' && e.message.Data.UserId === user.Id &&
+        e.message.Data.UserDataList.some(d => d.ItemId === movieId && d[field] === value)), 'original client receives saved user data');
+    }
+    await connectEvents();
+    for (const method of ['POST', 'DELETE']) {
+      const offset = messages.length;
+      const favorite = await localAPI(`Users/${user.Id}/FavoriteItems/${movieId}`, { method });
+      assert.equal(favorite.status, 200);
+      await favorite.arrayBuffer();
+      await expectChange(offset, 'IsFavorite', method === 'POST');
+    }
+    for (const method of ['reportPlaybackStart', 'reportPlaybackProgress', 'reportPlaybackStopped']) {
+      const offset = messages.length;
+      // A discrete event bypasses ApiClient's 10-second timeupdate throttle.
+      await mediaClient[method]({ ItemId: movieId, PlaySessionId: playback.PlaySessionId, PositionTicks: 2500000, EventName: 'pause' });
+      await expectChange(offset, 'PlaybackPositionTicks', 2500000);
     }
     await stop();
     await start();
+    await connectEvents();
     assert.equal((await mediaClient.getItem(user.Id, movieId)).Id, movieId);
+    assert.equal((await mediaClient.getItem(user.Id, episode.Id)).SeriesId, showId);
+    assert.equal((await mediaClient.getSeasons(showId, { UserId: user.Id })).Items[0].Id, seasons.Items[0].Id);
     const resumed = await mediaClient.getItem(user.Id, movieId);
     assert.equal(resumed.UserData.PlaybackPositionTicks, 2500000);
     const resumeResponse = await localAPI(`Users/${user.Id}/Items/Resume`);
     assert.equal(resumeResponse.status, 200);
     assert.equal((await resumeResponse.json()).Items[0].Id, movieId);
-    const finished = await localAPI('Sessions/Playing/Stopped', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ItemId: movieId, PositionTicks: 10000000 }),
-    });
-    assert.equal(finished.status, 204);
+    const resumedPlayback = await mediaClient.getPlaybackInfo(movieId, { UserId: user.Id, StartTimeTicks: 2500000 }, profile);
+    await mediaClient.reportPlaybackStart({ ItemId: movieId, PlaySessionId: resumedPlayback.PlaySessionId, PositionTicks: 2500000 });
+    const finishedOffset = messages.length;
+    await mediaClient.reportPlaybackStopped({ ItemId: movieId, PlaySessionId: resumedPlayback.PlaySessionId, PositionTicks: 10000000 });
+    await expectChange(finishedOffset, 'Played', true);
     const watched = await mediaClient.getItem(user.Id, movieId);
     assert.equal(watched.UserData.Played, true);
     assert.equal(watched.UserData.PlaybackPositionTicks, 0);
     assert.equal(createHash('sha256').update(await readFile(path.join(mediaDirectory, 'Sample.mp4'))).digest('hex'), sourceHash);
-    mediaChecks.push('FFprobe video/audio metadata', 'movie views/list/detail', 'search/pagination/latest', 'broken file isolation', 'restart stable movie ID', 'source unchanged', 'original ApiClient PlaybackInfo query/profile negotiation', 'stream bytes/HEAD/Range/416/401', 'progress/resume after restart', 'watched at end');
+    mediaChecks.push('FFprobe video/audio metadata', 'movie views/list/detail', 'search/pagination/latest', 'broken file isolation', 'restart stable movie ID', 'source unchanged', 'original ApiClient PlaybackInfo query/profile negotiation', 'stream bytes/HEAD/Range/416/401', 'progress/resume after restart', 'watched at end', 'original ApiClient UserDataChanged favorites/progress/played', 'web socket shutdown and reconnect');
   }
   await restored.logout();
+  await waitFor(() => sockets.size === 0, 'logout revokes sibling web socket');
   const denied = await fetch(`${origin}/emby/Users/${user.Id}`, { headers: { 'X-Emby-Token': auth.AccessToken } });
   assert.equal(denied.status, 401);
   console.log(JSON.stringify({ result: 'passed', referenceVersion, checks: ['static web assets', 'public info', 'public users', 'form login', 'query token', 'user', 'empty views', 'text/plain JSON settings', 'capabilities', 'restart identity/session/settings', 'logout revocation', ...mediaChecks], modulesSHA256: sources, requestPatterns: [...paths].map(p => p.replaceAll(user.Id, '{userId}').replace(/\/Items\/[a-f0-9]{32}/gi, '/Items/{itemId}')).sort() }, null, 2));

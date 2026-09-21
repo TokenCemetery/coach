@@ -63,6 +63,14 @@ type Session struct {
 	Version      string
 	ExpiresAt    time.Time
 	Capabilities map[string]json.RawMessage
+	RecentPlays  []PlaybackRecord `json:",omitempty"`
+}
+
+// PlaybackRecord retains a bounded retry window per authenticated client.
+type PlaybackRecord struct {
+	ID      string
+	ItemID  string
+	Stopped bool
 }
 
 type Data struct {
@@ -283,23 +291,35 @@ func (s *Store) Change(token string, fn func(*Data, *Session)) error {
 // SetItem updates one item's playback state under the write lock, re-checking
 // the session so a concurrent logout cannot be followed by a successful write.
 func (s *Store) SetItem(token, itemID string, fn func(*ItemState)) error {
+	return s.SetItemSession(token, itemID, func(item *ItemState, _ *Session) { fn(item) })
+}
+
+// SetItemSession saves playback lifecycle and item state in one transaction.
+func (s *Store) SetItemSession(token, itemID string, fn func(*ItemState, *Session)) error {
 	if itemID == "" {
 		return errors.New("item id is required")
 	}
-	return s.Change(token, func(d *Data, _ *Session) {
+	return s.update(func(d *Data) error {
+		key := tokenHash(token)
+		session, ok := d.Sessions[key]
+		if !ok || !session.ExpiresAt.After(time.Now()) {
+			return ErrSession
+		}
 		if d.User.Items == nil {
 			d.User.Items = map[string]ItemState{}
 		}
 		current, exists := d.User.Items[itemID]
 		if !exists && len(d.User.Items) >= maxTrackedItems {
-			return
+			return ErrStateLimit
 		}
-		fn(&current)
+		fn(&current, &session)
+		d.Sessions[key] = session
 		if current == (ItemState{}) {
 			delete(d.User.Items, itemID)
-			return
+			return nil
 		}
 		d.User.Items[itemID] = current
+		return nil
 	})
 }
 

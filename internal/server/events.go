@@ -73,15 +73,31 @@ func (s *Server) publishUserData(userID string, data object) {
 }
 
 func (s *Server) updateItem(token string, item media.Item, change func(*state.ItemState)) (object, error) {
-	// Keep commit, snapshot and enqueue ordered across concurrent API requests.
+	return s.updateItemSession(token, item, func(st *state.ItemState, _ *state.Session) { change(st) })
+}
+
+func (s *Server) updateItemSession(token string, item media.Item, change func(*state.ItemState, *state.Session)) (object, error) {
+	// Keep commit and enqueue ordered across concurrent API requests.
 	s.itemMu.Lock()
 	defer s.itemMu.Unlock()
-	if err := s.store.SetItem(token, item.ID, change); err != nil {
+	session, err := s.store.Authenticate(token)
+	if err != nil {
 		return nil, err
 	}
-	snapshot := s.store.Snapshot()
-	data := itemUserData(snapshot.User.Items[item.ID], item.RunTimeTicks)
+	var saved state.ItemState
+	applied := false
+	if err := s.store.SetItemSession(token, item.ID, func(st *state.ItemState, session *state.Session) {
+		change(st, session)
+		saved, applied = *st, true
+	}); err != nil {
+		return nil, err
+	}
+	if !applied {
+		return nil, state.ErrStateLimit
+	}
+	// Capture only this item, not a JSON clone of the entire store per event.
+	data := itemUserData(saved, item.RunTimeTicks)
 	data["ItemId"] = item.ID
-	s.publishUserData(snapshot.User.ID, data)
+	s.publishUserData(session.UserID, data)
 	return data, nil
 }

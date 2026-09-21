@@ -1,4 +1,4 @@
-// Package media builds a read-only movie catalogue from an explicitly selected directory.
+// Package media builds a read-only video catalogue from an explicitly selected directory.
 package media
 
 import (
@@ -26,13 +26,21 @@ const maxMovies = 10000
 type Catalog struct {
 	ID      string
 	Items   []Item
+	Folders []Item
 	Skipped int
 	root    *os.Root
 }
 
 type Item struct {
-	ID   string
-	Name string
+	ID            string
+	Name          string
+	Kind          string
+	ParentID      string
+	SeriesID      string
+	SeriesName    string
+	SeasonID      string
+	SeasonNumber  int
+	EpisodeNumber int
 	// Path is relative to the catalogue root and is never sent to clients.
 	Path         string
 	Container    string
@@ -206,5 +214,6 @@ func scan(ctx context.Context, directory string, probe func(context.Context, *os
 		return nil, err
 	}
 	slices.SortFunc(catalog.Items, func(a, b Item) int { return strings.Compare(a.ID, b.ID) })
+	catalog.groupEpisodes()
 	return catalog, nil
 }

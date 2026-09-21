@@ -109,34 +109,78 @@ func (s *Server) rootFolderDTO(serverID string) object {
 // without a guard (videos.js: this.item.Subviews.includes(...)), so a library
 // served without Subviews breaks the screen outright.
 func (s *Server) libraryDTO(serverID string, detail bool) object {
-	dto := baseFields(s.media.ID, "Movies", "CollectionFolder", serverID)
+	return s.collectionDTO(s.media.ID, serverID, detail)
+}
+
+func (s *Server) collectionDTO(id, serverID string, detail bool) object {
+	name, collectionType, subview := "Movies", "movies", "movies"
+	if id == s.media.SeriesLibraryID() {
+		name, collectionType, subview = "TV Shows", "tvshows", "series"
+	}
+	dto := baseFields(id, name, "CollectionFolder", serverID)
 	dto["DateCreated"] = zeroDate
 	dto["IsFolder"] = true
 	dto["ParentId"] = rootID
-	dto["CollectionType"] = "movies"
+	dto["CollectionType"] = collectionType
 	dto["UserData"] = folderUserData()
 	dto["PrimaryImageAspectRatio"] = 1.7777777777777777
 	if detail {
-		dto["ChildCount"] = len(s.media.Items)
+		dto["ChildCount"] = s.childCount(id)
 		// Only the subviews Coach can actually serve are advertised.
-		dto["Subviews"] = []string{"movies"}
+		dto["Subviews"] = []string{subview}
 	}
 	return dto
 }
 
 func (s *Server) libraryCount() int {
+	return len(s.libraryIDs())
+}
+
+func (s *Server) libraryIDs() []string {
 	if s.media == nil {
-		return 0
+		return nil
 	}
-	return 1
+	if len(s.media.Folders) > 0 {
+		return []string{s.media.ID, s.media.SeriesLibraryID()}
+	}
+	return []string{s.media.ID}
+}
+
+func (s *Server) childCount(id string) int {
+	count := 0
+	for _, items := range [][]media.Item{s.media.Items, s.media.Folders} {
+		for _, item := range items {
+			if s.media.Parent(item) == id {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 func (s *Server) movieDTO(item media.Item, serverID string, items map[string]state.ItemState) object {
-	dto := baseFields(item.ID, item.Name, "Movie", serverID)
+	dto := baseFields(item.ID, item.Name, item.Type(), serverID)
 	dto["DateCreated"] = embyDate(item.Modified)
 	dto["DateModified"] = embyDate(item.Modified)
-	dto["IsFolder"] = false
-	dto["ParentId"] = s.media.ID
+	dto["IsFolder"] = item.IsFolder()
+	dto["ParentId"] = s.media.Parent(item)
+	dto["GenreItems"] = []any{}
+	dto["TagItems"] = []any{}
+	dto["UserData"] = itemUserData(items[item.ID], item.RunTimeTicks)
+	if item.SeriesID != "" {
+		dto["SeriesId"], dto["SeriesName"] = item.SeriesID, item.SeriesName
+	}
+	if item.Type() == "Season" {
+		dto["IndexNumber"] = item.SeasonNumber
+	}
+	if item.Type() == "Episode" {
+		dto["IndexNumber"], dto["ParentIndexNumber"] = item.EpisodeNumber, item.SeasonNumber
+		dto["SeasonId"], dto["SeasonName"] = item.SeasonID, "Season "+itoa(item.SeasonNumber)
+	}
+	if item.IsFolder() {
+		dto["ChildCount"] = s.childCount(item.ID)
+		return dto
+	}
 	dto["MediaType"] = "Video"
 	dto["VideoType"] = "VideoFile"
 	dto["Container"] = item.Container

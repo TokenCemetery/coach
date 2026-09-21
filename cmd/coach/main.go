@@ -30,7 +30,7 @@ func run() error {
 	name := flag.String("name", "Coach", "server display name")
 	upstream := flag.String("web-upstream", "", "optional Emby origin supplying only /web static assets")
 	webDir := flag.String("web-dir", "", "optional local Emby Web directory containing index.html")
-	mediaDir := flag.String("media-dir", "", "optional read-only movie directory; scanned at startup with ffprobe")
+	mediaDir := flag.String("media-dir", "", "optional read-only movie/series directory; scanned at startup with ffprobe")
 	init := flag.Bool("init", false, "initialize a local user; read password from stdin and exit")
 	username := flag.String("username", "", "username for -init")
 	flag.Parse()
@@ -81,14 +81,14 @@ func run() error {
 	defer stop()
 	var catalog *media.Catalog
 	if *mediaDir != "" {
-		slog.Info("Scanning movie directory")
+		slog.Info("Scanning media directory")
 		scanCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 		catalog, err = media.Scan(scanCtx, *mediaDir)
 		cancel()
 		if err != nil {
-			return fmt.Errorf("scan movies: %w", err)
+			return fmt.Errorf("scan media: %w", err)
 		}
-		slog.Info("Movie scan complete", "movies", len(catalog.Items), "skipped", catalog.Skipped)
+		slog.Info("Media scan complete", "videos", len(catalog.Items), "folders", len(catalog.Folders), "skipped", catalog.Skipped)
 		defer catalog.Close()
 	}
 	api := server.New(s, *name, web, catalog)

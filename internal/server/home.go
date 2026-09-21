@@ -44,12 +44,16 @@ func (s *Server) homeSections(serverID string) []object {
 		homeSection("smalllibrarytiles", "My Media", "userviews", []string{}, -1),
 		homeSection("resume", "Continue Watching", "resume", []string{"videoplayback", "markplayed"}, 0),
 	}
-	if s.media != nil {
-		latest := homeSection("latestmedia_"+s.media.ID, "Latest Movies", "latestmedia",
+	for _, id := range s.libraryIDs() {
+		name, collectionType := "Latest Movies", "movies"
+		if id == s.media.SeriesLibraryID() {
+			name, collectionType = "Latest Episodes", "tvshows"
+		}
+		latest := homeSection("latestmedia_"+id, name, "latestmedia",
 			[]string{"markplayed", "videoplayback"}, 0)
-		latest["CollectionType"] = "movies"
-		latest["ParentItem"] = s.libraryDTO(serverID, false)
-		latest["ParentId"] = s.media.ID
+		latest["CollectionType"] = collectionType
+		latest["ParentItem"] = s.collectionDTO(id, serverID, false)
+		latest["ParentId"] = id
 		latest["Query"] = object{
 			"StudioIds":       []string{},
 			"TagIds":          []string{},
@@ -81,17 +85,20 @@ func (s *Server) sectionItems(w http.ResponseWriter, r *http.Request) {
 	items := []object{}
 	switch {
 	case section == "smalllibrarytiles":
-		if s.media != nil {
-			items = append(items, s.libraryDTO(serverID, false))
+		for _, id := range s.libraryIDs() {
+			items = append(items, s.collectionDTO(id, serverID, false))
 		}
 	case section == "resume":
 		items = s.resumeItems(limit)
 	case section == "resumeaudio":
 		// Coach serves no audio library, so this row is always empty.
-	case s.media != nil && section == strings.ToLower("latestmedia_"+s.media.ID):
+	case strings.HasPrefix(section, "latestmedia_") && slices.Contains(s.libraryIDs(), strings.TrimPrefix(section, "latestmedia_")):
+		series := strings.TrimPrefix(section, "latestmedia_") == s.media.SeriesLibraryID()
 		latest := make([]*media.Item, 0, len(s.media.Items))
 		for i := range s.media.Items {
-			latest = append(latest, &s.media.Items[i])
+			if !snapshot.User.Items[s.media.Items[i].ID].Played && (s.media.Items[i].Type() == "Episode") == series {
+				latest = append(latest, &s.media.Items[i])
+			}
 		}
 		slices.SortFunc(latest, func(a, b *media.Item) int {
 			if c := b.Modified.Compare(a.Modified); c != 0 {
