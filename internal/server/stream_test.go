@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -188,5 +189,63 @@ func TestStreamBlockedWriteTimesOut(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("blocked write was not bounded")
+	}
+}
+
+func TestStreamCancellationClosesFile(t *testing.T) {
+	name := filepath.Join(t.TempDir(), "long.mp4")
+	file, err := os.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Sparse fixture is larger than socket buffers without allocating it in RAM.
+	if err := file.Truncate(64 << 20); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	done := make(chan error, 1)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f, err := os.Open(name)
+		if err != nil {
+			fail(w, 404, "MediaUnavailable")
+			return
+		}
+		defer func() { done <- f.Close() }()
+		serveMediaFile(w, r, f, media.Item{ID: "long", Container: "mp4"})
+	}))
+	defer s.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r, err := http.NewRequestWithContext(ctx, "GET", s.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := s.Client().Do(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(response.Body, make([]byte, 1024)); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	response.Body.Close()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceled stream retained its file/handler")
+	}
+	if err := os.Remove(name); err != nil {
+		t.Fatal(err)
+	}
+	response, err = s.Client().Get(s.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != 404 {
+		t.Fatal("missing file did not return 404")
 	}
 }
