@@ -36,6 +36,10 @@ func TestSeriesCatalog(t *testing.T) {
 		{"/Shows/show/Seasons?IsSpecialSeason=false", "season"},
 		{"/Shows/show/Seasons?IsSpecialSeason=true&ExcludeItemIds=other", "specials"},
 		{"/Shows/show/Episodes", "sp1,e1,e2"},
+		// Play on an episode page builds the queue with this query.
+		{"/Shows/show/Episodes?IsVirtualUnaired=false&IsMissing=false&Fields=PrimaryImageAspectRatio", "sp1,e1,e2"},
+		{"/Shows/show/Episodes?IsMissing=true", ""},
+		{"/Items?Recursive=true&IncludeItemTypes=Episode&IsVirtualUnaired=true", ""},
 		// Series playback query sent by Emby Web 4.10.0.40.
 		{"/Items?ParentId=show&Filters=IsNotFolder&Recursive=true&IsStandaloneSpecial=false&ExcludeLocationTypes=Virtual&CollapseBoxSetItems=false&SortBy=ParentIndexNumber,IndexNumber", "e1,e2"},
 		{"/Items?ParentId=show&Filters=IsFolder&Recursive=true&IsStandaloneSpecial=true", ""},
