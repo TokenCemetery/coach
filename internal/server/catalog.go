@@ -78,6 +78,19 @@ func (s *Server) catalogRoutes(mux *http.ServeMux) {
 		}))
 	}
 	mux.HandleFunc("POST /users/{user}/searcheditems", s.protect(s.reportSearched))
+	// The "Clear" button on the search page; Emby Web sends no body.
+	mux.HandleFunc("POST /users/{user}/recentlysearched/delete", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+		s.changed(w, s.store.Change(token, func(d *state.Data, _ *state.Session) {
+			for id, st := range d.User.Items {
+				st.LastSearched = time.Time{}
+				if st == (state.ItemState{}) {
+					delete(d.User.Items, id)
+				} else {
+					d.User.Items[id] = st
+				}
+			}
+		}))
+	}))
 	s.extrasRoutes(mux)
 	s.seriesRoutes(mux)
 	s.imageRoutes(mux)

@@ -99,6 +99,15 @@ func TestSearchHistory(t *testing.T) {
 	if _, kept := store.Snapshot().User.Items["c"]; kept {
 		t.Fatal("cleared search state was kept")
 	}
+	expectStatus(t, request(h, "POST", base+"/PlayedItems/a", "", "", token), 200)
+	report(`{"Ids":["a"],"WasSearched":true}`, 204)
+	expectStatus(t, request(h, "POST", base+"/RecentlySearched/Delete", "", "", token), 204)
+	if got := ids("/Items?Recursive=true&WasSearched=true"); got != "" {
+		t.Fatal(got)
+	}
+	if st := store.Snapshot().User.Items; !st["a"].Played || len(st) != 1 {
+		t.Fatal("clearing search history changed other state", st)
+	}
 	report(`{"Ids":["missing"],"WasSearched":true}`, 404)
 	for _, body := range []string{`{"Ids":[],"WasSearched":true}`, `{"Ids":["a"]}`, `{"Ids":null,"WasSearched":true}`} {
 		report(body, 400)
