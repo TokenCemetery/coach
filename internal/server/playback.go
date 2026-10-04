@@ -3,11 +3,13 @@ package server
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"math"
 	"mime"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"slices"
 	"strconv"
@@ -69,6 +71,16 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 	}
 	playSession := randomSessionID()
 	streams := mediaStreams(item)
+	// Sidecar subtitles are fetched by the player beside the direct stream.
+	// Like the stream URL, theirs carries the token for a <track> element.
+	for i, stream := range item.Streams {
+		if stream.Path != "" {
+			streams[i]["DeliveryMethod"] = "External"
+			streams[i]["DeliveryFormat"] = "vtt"
+			streams[i]["IsExternalUrl"] = false
+			streams[i]["DeliveryUrl"] = subtitleURL(item, stream.Index, token)
+		}
+	}
 	source := mediaSource(item, streams)
 	direct := body.supportsDirectStream(item, video, audio)
 	source["SupportsDirectPlay"] = false
@@ -83,6 +95,9 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 		source["DefaultAudioStreamIndex"] = audio.Index
 	}
 	source["DefaultSubtitleStreamIndex"] = -1
+	if body.SubtitleStreamIndex != nil && externalSubtitle(item, *body.SubtitleStreamIndex) {
+		source["DefaultSubtitleStreamIndex"] = *body.SubtitleStreamIndex
+	}
 	response := object{"MediaSources": []object{source}, "PlaySessionId": playSession}
 	if direct {
 		source["DirectStreamUrl"] = directStreamURL(item, session.DeviceID, playSession, token)
@@ -90,6 +105,34 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 		response["ErrorCode"] = "NoCompatibleStream"
 	}
 	respond(w, 200, response)
+}
+
+// subtitleURL is relative like directStreamURL, for the same reason.
+func subtitleURL(item media.Item, index int, token string) string {
+	return "/videos/" + item.ID + "/mediasource_" + item.ID + "/subtitles/" + strconv.Itoa(index) + "/stream.vtt?api_key=" + url.QueryEscape(token)
+}
+
+// streamSubtitle serves a sidecar subtitle as WebVTT. The start position
+// variant of the route returns the whole file: players seek within it.
+func (s *Server) streamSubtitle(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+	item, found := s.findItem(r.PathValue("item"))
+	index, err := strconv.Atoi(r.PathValue("index"))
+	if !found || item.IsFolder() || err != nil || r.PathValue("source") != "mediasource_"+item.ID || r.PathValue("file") != "stream.vtt" {
+		fail(w, 404, "NotFound")
+		return
+	}
+	text, err := s.media.OpenSubtitle(item, index)
+	if errors.Is(err, os.ErrNotExist) {
+		fail(w, 404, "NotFound")
+		return
+	}
+	if err != nil {
+		slog.Warn("Subtitle unavailable", "item", item.ID, "index", index)
+		fail(w, 404, "MediaUnavailable")
+		return
+	}
+	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+	_, _ = w.Write(text)
 }
 
 // directStreamURL matches the relative form Emby returns: no "/emby" prefix,
@@ -450,6 +493,8 @@ func (s *Server) playbackRoutes(mux *http.ServeMux) {
 	// Emby also answers GET for clients that cannot post a profile.
 	mux.HandleFunc("GET /items/{item}/playbackinfo", s.protect(s.playbackInfo))
 	mux.HandleFunc("GET /items/{item}/download", s.protect(s.downloadItem))
+	mux.HandleFunc("GET /videos/{item}/{source}/subtitles/{index}/{file}", s.protect(s.streamSubtitle))
+	mux.HandleFunc("GET /videos/{item}/{source}/subtitles/{index}/{start}/{file}", s.protect(s.streamSubtitle))
 	for _, prefix := range []string{"/videos", "/audio"} {
 		mux.HandleFunc("GET "+prefix+"/{item}/{stream}", s.protect(s.streamVideo))
 		mux.HandleFunc("HEAD "+prefix+"/{item}/{stream}", s.protect(s.streamVideo))

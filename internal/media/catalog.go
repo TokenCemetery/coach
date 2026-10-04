@@ -103,6 +103,9 @@ type Stream struct {
 	IsDefault         bool
 	IsForced          bool
 	IsHearingImpaired bool
+	// Path is set for an external subtitle file, relative to the media
+	// directory. It is never sent to clients.
+	Path string `json:",omitempty"`
 }
 
 func stableID(s string) string {
@@ -129,8 +132,13 @@ func scan(ctx context.Context, directory string, probe func(context.Context, *os
 		return nil, errors.New("cannot open media directory")
 	}
 	catalog := &Catalog{ID: stableID("movies\x00" + absolute), Items: []Item{}, root: root}
+	subtitles := []string{}
 	visit := func(path string, entry fs.DirEntry) error {
 		ext := strings.ToLower(filepath.Ext(path))
+		if sidecarCodec(ext) != "" {
+			subtitles = append(subtitles, path)
+			return nil
+		}
 		switch ext {
 		case ".mp4", ".m4v", ".mkv", ".webm", ".avi", ".mov", ".mpg", ".mpeg", ".ts", ".m2ts", ".wmv", ".ogv":
 		default:
@@ -217,6 +225,7 @@ func scan(ctx context.Context, directory string, probe func(context.Context, *os
 		return nil, err
 	}
 	slices.SortFunc(catalog.Items, func(a, b Item) int { return strings.Compare(a.ID, b.ID) })
+	attachSidecars(catalog.Items, subtitles)
 	catalog.groupEpisodes()
 	return catalog, nil
 }
