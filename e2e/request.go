@@ -35,9 +35,13 @@ var requestOverrides = map[string]func(*Request, Fixtures){
 	"postUsersAuthenticatebyname": func(r *Request, _ Fixtures) {
 		r.Body = []byte(`{"Username":"` + testUser + `","Pw":"` + testPassword + `"}`)
 	},
-	"postSessionsPlaying":              playstateBody,
-	"postSessionsPlayingProgress":      playstateBody,
-	"postSessionsPlayingStopped":       playstateBody,
+	"postSessionsPlaying":         playstateBody,
+	"postSessionsPlayingProgress": playstateBody,
+	"postSessionsPlayingStopped":  playstateBody,
+	// The Profile page sends the current password with the new one.
+	"postUsersByIdPassword": func(r *Request, _ Fixtures) {
+		r.Body = []byte(`{"CurrentPw":"` + testPassword + `","NewPw":"e2e-only-new-password"}`)
+	},
 	"postUsersByIdImagesByType":        avatarUpload,
 	"postUsersByIdImagesByTypeByIndex": avatarUpload,
 	// Emby Web always reports at least one item and WasSearched.

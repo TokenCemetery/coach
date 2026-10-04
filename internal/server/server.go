@@ -171,6 +171,7 @@ func (s *Server) Handler() http.Handler {
 		respond(w, 200, s.userDTO(s.store.Snapshot(), token))
 	})
 	mux.HandleFunc("GET /users/{user}", user)
+	mux.HandleFunc("POST /users/{user}/password", s.protect(s.changePassword))
 	mux.HandleFunc("GET /users/me", user)
 	mux.HandleFunc("POST /sessions/logout", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		if s.store.Logout(token) != nil {

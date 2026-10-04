@@ -79400,6 +79400,10 @@ components:
       properties:
         Id:
           type: string
+        CurrentPw:
+          type: string
+          x-coach-source: Emby Web 4.10.0.40 (modules/emby-apiclient/apiclient.js, updateUserPassword) sends the
+            current password with NewPw from the Profile page; the Emby document omits it.
         NewPw:
           type: string
         ResetPassword:

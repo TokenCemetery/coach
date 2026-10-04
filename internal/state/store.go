@@ -28,6 +28,7 @@ var (
 	ErrSession      = errors.New("invalid or expired session")
 	ErrSessionLimit = errors.New("session limit reached")
 	ErrStateLimit   = errors.New("state size limit reached")
+	ErrPassword     = errors.New("password must contain 12–1024 bytes")
 )
 
 // User is the single local account with its settings and playback state.
@@ -273,6 +274,54 @@ func (s *Store) Login(name, password string, client Session) (string, Session, e
 		return nil
 	})
 	return token, client, err
+}
+
+// ChangePassword replaces the password after verifying the current one. The
+// calling session stays signed in; every other session is revoked, and their
+// IDs are returned so open connections can be closed.
+func (s *Store) ChangePassword(token, current, next string) ([]string, error) {
+	if len(next) < 12 || len(next) > 1024 {
+		return nil, ErrPassword
+	}
+	s.mu.RLock()
+	u := s.data.User
+	s.mu.RUnlock()
+	hash, err := pbkdf2.Key(sha256.New, current, u.Salt, u.Iterations, 32)
+	if err != nil {
+		return nil, err
+	}
+	if subtle.ConstantTimeCompare(hash, u.PasswordHash) != 1 {
+		return nil, ErrCredentials
+	}
+	salt := make([]byte, 16)
+	_, _ = rand.Read(salt)
+	nextHash, err := pbkdf2.Key(sha256.New, next, salt, passwordIterations, 32)
+	if err != nil {
+		return nil, err
+	}
+	revoked := []string{}
+	err = s.update(func(d *Data) error {
+		key := tokenHash(token)
+		if session, ok := d.Sessions[key]; !ok || !session.ExpiresAt.After(time.Now()) {
+			return ErrSession
+		}
+		// A concurrent change must not be overwritten with a stale verification.
+		if subtle.ConstantTimeCompare(d.User.PasswordHash, u.PasswordHash) != 1 {
+			return ErrCredentials
+		}
+		d.User.Salt, d.User.PasswordHash, d.User.Iterations = salt, nextHash, passwordIterations
+		for k, session := range d.Sessions {
+			if k != key {
+				revoked = append(revoked, session.ID)
+				delete(d.Sessions, k)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return revoked, nil
 }
 
 // Authenticate returns the unexpired session for token.

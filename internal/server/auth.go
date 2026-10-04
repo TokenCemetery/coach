@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -100,6 +101,106 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	return nil
 }
 
+// readFields reads the string fields Emby clients post as a form or as JSON
+// (Emby Web sends JSON as text/plain with reqformat=json). Names are returned
+// in lower case; booleans become "true"/"false" and other JSON values are
+// ignored. On failure the response has been written.
+func readFields(w http.ResponseWriter, r *http.Request) (map[string]string, bool) {
+	fields := map[string]string{}
+	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	switch {
+	case ct == "application/x-www-form-urlencoded":
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		if r.ParseForm() != nil {
+			fail(w, 400, "InvalidRequest")
+			return nil, false
+		}
+		for k, v := range r.PostForm {
+			if len(v) != 1 {
+				fail(w, 400, "InvalidRequest")
+				return nil, false
+			}
+			fields[strings.ToLower(k)] = v[0]
+		}
+	case ct == "application/json" || (ct == "text/plain" && strings.EqualFold(value(r, "reqformat"), "json")):
+		var body map[string]any
+		if decodeJSON(w, r, &body) != nil {
+			fail(w, 400, "InvalidRequest")
+			return nil, false
+		}
+		for k, v := range body {
+			switch v := v.(type) {
+			case string:
+				fields[strings.ToLower(k)] = v
+			case bool:
+				fields[strings.ToLower(k)] = strconv.FormatBool(v)
+			}
+		}
+	default:
+		fail(w, 415, "UnsupportedMediaType")
+		return nil, false
+	}
+	return fields, true
+}
+
+// verifying applies the login limit to any request that checks a password. It
+// returns false after writing 429; otherwise release must be called.
+func (s *Server) verifying(w http.ResponseWriter) (release func(), ok bool) {
+	if !s.logins.allow() {
+		w.Header().Set("Retry-After", "60")
+		fail(w, 429, "TooManyRequests")
+		return nil, false
+	}
+	select {
+	case s.logins.active <- struct{}{}:
+		return func() { <-s.logins.active }, true
+	default:
+		w.Header().Set("Retry-After", "1")
+		fail(w, 429, "TooManyRequests")
+		return nil, false
+	}
+}
+
+// changePassword serves the Profile page form, which posts CurrentPw and NewPw.
+// The administrator reset (ResetPassword without the current password) is
+// refused: Coach's single user is not an administrator.
+func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+	release, ok := s.verifying(w)
+	if !ok {
+		return
+	}
+	defer release()
+	fields, ok := readFields(w, r)
+	if !ok {
+		return
+	}
+	if fields["resetpassword"] == "true" {
+		fail(w, 403, "Forbidden")
+		return
+	}
+	current, next := fields["currentpw"], fields["newpw"]
+	if len(current) > 1024 {
+		fail(w, 400, "InvalidRequest")
+		return
+	}
+	revoked, err := s.store.ChangePassword(token, current, next)
+	switch {
+	case errors.Is(err, state.ErrPassword):
+		fail(w, 400, "InvalidPassword")
+		return
+	case errors.Is(err, state.ErrCredentials):
+		fail(w, 401, "InvalidCurrentPassword")
+		return
+	case err != nil:
+		s.changed(w, err)
+		return
+	}
+	for _, id := range revoked {
+		s.disconnectSession(id)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // A bounded global window and semaphore cap password verification work. This
 // intentionally simple M1 limit does not retain attacker-controlled IP keys.
 type loginLimit struct {
@@ -123,56 +224,21 @@ func (l *loginLimit) allow() bool {
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	if !s.logins.allow() {
-		w.Header().Set("Retry-After", "60")
-		fail(w, 429, "TooManyRequests")
+	release, ok := s.verifying(w)
+	if !ok {
 		return
 	}
-	select {
-	case s.logins.active <- struct{}{}:
-		defer func() { <-s.logins.active }()
-	default:
-		w.Header().Set("Retry-After", "1")
-		fail(w, 429, "TooManyRequests")
+	defer release()
+	fields, ok := readFields(w, r)
+	if !ok {
 		return
 	}
-	var body struct {
-		Username string
-		Pw       string
-	}
-	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if ct == "application/x-www-form-urlencoded" {
-		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
-		if r.ParseForm() != nil {
-			fail(w, 400, "InvalidRequest")
-			return
-		}
-		for k, v := range r.PostForm {
-			if len(v) != 1 {
-				fail(w, 400, "InvalidRequest")
-				return
-			}
-			switch strings.ToLower(k) {
-			case "username":
-				body.Username = v[0]
-			case "pw":
-				body.Pw = v[0]
-			}
-		}
-	} else if ct == "application/json" || (ct == "text/plain" && strings.EqualFold(value(r, "reqformat"), "json")) {
-		if decodeJSON(w, r, &body) != nil {
-			fail(w, 400, "InvalidRequest")
-			return
-		}
-	} else {
-		fail(w, 415, "UnsupportedMediaType")
-		return
-	}
-	if body.Username == "" || len(body.Username) > 128 || len(body.Pw) > 1024 {
+	username, pw := fields["username"], fields["pw"]
+	if username == "" || len(username) > 128 || len(pw) > 1024 {
 		fail(w, 400, "InvalidRequest")
 		return
 	}
-	token, session, err := s.store.Login(body.Username, body.Pw, clientInfo(r))
+	token, session, err := s.store.Login(username, pw, clientInfo(r))
 	if errors.Is(err, state.ErrCredentials) {
 		fail(w, 401, "Unauthorized")
 		return

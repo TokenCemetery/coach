@@ -517,7 +517,6 @@ var knownFailures = map[string]knownFailure{
 	"postUsersById":                                 administration,
 	"postUsersByIdAuthenticate":                     administration,
 	"postUsersByIdDelete":                           administration,
-	"postUsersByIdPassword":                         administration,
 	"postUsersByIdPolicy":                           administration,
 	"postUsersByIdTrackselectionsByTracktypeDelete": administration,
 	"postUsersByUseridCopydata":                     administration,
