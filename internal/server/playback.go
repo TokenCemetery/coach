@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"math"
@@ -85,10 +86,15 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 	// Subtitles are delivered as separate WebVTT files; burn-in is not
 	// implemented. Never promise a selected subtitle Coach cannot deliver.
 	subtitle := -1
-	if body.SubtitleStreamIndex != nil && *body.SubtitleStreamIndex >= 0 {
+	deliverable := func(index int) bool { return s.media.SubtitleDeliverable(item, index) }
+	switch {
+	case body.SubtitleStreamIndex != nil && *body.SubtitleStreamIndex >= 0:
 		subtitle = int(*body.SubtitleStreamIndex)
+	case body.SubtitleStreamIndex == nil:
+		// The client left the choice to the server's subtitle mode.
+		subtitle = defaultSubtitle(item, s.subtitleSelection(), audio, deliverable)
 	}
-	direct := body.supportsDirectStream(item, video, audio) && (subtitle < 0 || s.media.SubtitleDeliverable(item, subtitle))
+	direct := body.supportsDirectStream(item, video, audio) && (subtitle < 0 || deliverable(subtitle))
 	source["SupportsDirectPlay"] = false
 	source["SupportsDirectStream"] = direct
 	source["SupportsTranscoding"] = false
@@ -111,6 +117,16 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 		response["ErrorCode"] = "NoCompatibleStream"
 	}
 	respond(w, 200, response)
+}
+
+// subtitleSelection reads the user's subtitle mode and languages, with Emby's
+// defaults for values the user never saved.
+func (s *Server) subtitleSelection() subtitleSelection {
+	config := s.store.Snapshot().User.Configuration
+	selection := subtitleSelection{SubtitleMode: "Default"}
+	_ = json.Unmarshal(config["SubtitleMode"], &selection.SubtitleMode)
+	_ = json.Unmarshal(config["SubtitleLanguagePreference"], &selection.SubtitleLanguagePreference)
+	return selection
 }
 
 // subtitleURL is relative like directStreamURL, for the same reason.
