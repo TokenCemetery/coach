@@ -183,13 +183,20 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, token st
 		fail(w, 400, "InvalidRequest")
 		return
 	}
+	// Emby Web hides the current-password field for servers from 4.8.0.38 and
+	// sends it empty. Coach still requires it (#46), and answers in plain text,
+	// which the client's error dialog shows as written.
+	if current == "" {
+		failText(w, 400, "Coach requires the current password to change it, and this client did not send one.")
+		return
+	}
 	revoked, err := s.store.ChangePassword(token, current, next)
 	switch {
 	case errors.Is(err, state.ErrPassword):
-		fail(w, 400, "InvalidPassword")
+		failText(w, 400, "The new password must contain 12 to 1024 bytes.")
 		return
 	case errors.Is(err, state.ErrCredentials):
-		fail(w, 401, "InvalidCurrentPassword")
+		failText(w, 401, "The current password is incorrect.")
 		return
 	case err != nil:
 		s.changed(w, err)

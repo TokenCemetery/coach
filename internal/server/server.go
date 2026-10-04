@@ -48,6 +48,13 @@ func respond(w http.ResponseWriter, status int, data any) {
 	_ = json.NewEncoder(w).Encode(data)
 }
 
+// failText answers with a message Emby Web shows verbatim in its error dialog.
+func failText(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(message))
+}
+
 func fail(w http.ResponseWriter, status int, code string) {
 	respond(w, status, object{"ResponseStatus": object{"ErrorCode": code, "Message": code}})
 }
