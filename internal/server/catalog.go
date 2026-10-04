@@ -295,10 +295,11 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 	}
 	snapshot := s.store.Snapshot()
 	serverID := snapshot.ServerID
-	// Continue Watching with IncludeNextUp also offers each started series'
-	// next episode, dated by when the series was last watched.
+	// Continue Watching also offers each started series' next episode, dated
+	// by when the series was last watched. The reference Emby includes them
+	// without IncludeNextUp; only IncludeNextUp=false leaves them out.
 	nextUp := map[string]time.Time{}
-	if resume && query["includenextup"] == "true" {
+	if resume && query["includenextup"] != "false" {
 		for _, c := range s.nextUpEpisodes(snapshot.User.Items, "", "") {
 			if !snapshot.User.Items[c.next.ID].HiddenFromResume {
 				nextUp[c.next.ID] = c.lastPlayed

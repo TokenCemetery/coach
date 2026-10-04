@@ -179,7 +179,8 @@ func TestResumeIncludesNextUp(t *testing.T) {
 	}
 	base := "/Users/" + store.Snapshot().User.ID + "/Items/Resume?Recursive=true&MediaTypes=Video"
 	for _, tc := range []struct{ query, ids string }{
-		{"", "c1,movie"},
+		// Emby includes next-up episodes unless IncludeNextUp=false.
+		{"", "c1,b2,movie,a2"},
 		{"&IncludeNextUp=false", "c1,movie"},
 		// Next-up episodes are dated by when their series was last watched.
 		{"&IncludeNextUp=true", "c1,b2,movie,a2"},
