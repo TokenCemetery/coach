@@ -1,0 +1,6 @@
+# Home screen row titles. Keys are the Emby Web string keys for the same
+# headings (modules/common/strings). English is the fallback for every key.
+HeaderMyMedia: My Media
+HeaderContinueWatching: Continue Watching
+HeaderLatestMovies: Latest Movies
+HeaderLatestEpisodes: Latest Episodes
