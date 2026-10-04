@@ -103,7 +103,7 @@ API принимает маршруты без префикса и с `/emby/`, 
 | Воспроизведение | PlaybackInfo, Videos/{id}/stream.*, Sessions/Playing, /Progress, /Stopped |
 | Состояние просмотра | POST/DELETE PlayedItems и FavoriteItems |
 | WebSocket | `/embywebsocket`: вход по токену, KeepAlive, ping/pong, UserDataChanged |
-| Пока пустые результаты | Upcoming, Live TV recordings; Items с `MinPremiereDate` или `IsUnaired=true` (дат премьер нет) |
+| Пока пустые результаты | Upcoming, Missing (пропущенных эпизодов Coach не знает: нет онлайн-метаданных), Live TV recordings; Items с `MinPremiereDate` или `IsUnaired=true` (дат премьер нет) |
 
 Поддерживаются токены в заголовках, query `X-Emby-Token`/`api_key`, а также `Authorization: Emby …` и `MediaBrowser …`. Конфликтующие токены отклоняются. JSON, отправляемый клиентом как `text/plain` с `reqformat=json`, поддержан. Неизвестные маршруты возвращают 404. Ошибки, как у эталонного Emby, возвращаются как `text/plain` с понятным сообщением, которое Emby Web показывает в диалоге.
 

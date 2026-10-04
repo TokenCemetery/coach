@@ -482,8 +482,6 @@ var knownFailures = map[string]knownFailure{
 	"postEncodingPublictonemapoptions": transcoding,
 	// TrailersService
 	"getTrailers": unranked,
-	// TvShowsService
-	"getShowsMissing": nextUpAndCollections,
 	// UniversalAudioService
 	"getAudioByIdUniversal":             transcoding,
 	"getAudioByIdUniversalByContainer":  transcoding,

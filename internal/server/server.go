@@ -280,9 +280,10 @@ func (s *Server) Handler() http.Handler {
 	emptyPage := s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		respond(w, 200, object{"Items": []any{}, "TotalRecordCount": 0})
 	})
-	// Coach has no Live TV and no recommendation engine; Emby Web hides these
-	// rows when they are empty (series page airings, Movies Suggestions tab).
-	for _, path := range []string{"/shows/upcoming", "/livetv/recordings", "/livetv/programs"} {
+	// Coach has no Live TV, no recommendation engine and no online episode
+	// lists, so it knows of no missing episodes; Emby Web hides these rows when
+	// they are empty (series page airings, Movies Suggestions tab).
+	for _, path := range []string{"/shows/upcoming", "/shows/missing", "/livetv/recordings", "/livetv/programs"} {
 		mux.HandleFunc("GET "+path, emptyPage)
 	}
 	emptyList := s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
