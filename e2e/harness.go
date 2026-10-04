@@ -169,6 +169,7 @@ func (inst *Instance) AuthHeader() string {
 type Response struct {
 	Status      int
 	ContentType string
+	Header      http.Header
 	Body        []byte
 }
 
@@ -197,7 +198,7 @@ func (inst *Instance) Send(r Request, authorized bool) (Response, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
-	return Response{Status: resp.StatusCode, ContentType: resp.Header.Get("Content-Type"), Body: body}, err
+	return Response{Status: resp.StatusCode, ContentType: resp.Header.Get("Content-Type"), Header: resp.Header, Body: body}, err
 }
 
 // Get performs an authorized GET and decodes the JSON response into out.

@@ -3,9 +3,12 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"mime"
 	"net/url"
 	"os/exec"
+	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -66,6 +69,26 @@ var behaviors = []behavior{
 			}
 			if resp.Status != 200 || !bytes.HasPrefix(resp.Body, []byte("WEBVTT")) || !bytes.Contains(resp.Body, []byte("Coach e2e subtitle")) {
 				check.Errorf("subtitle: status %d, body %q, want 200 WebVTT with the cue text", resp.Status, snippet(resp.Body))
+			}
+		},
+	},
+	{
+		Key:     "download-attachment",
+		Title:   "Download serves the movie file as an attachment to a token in the URL",
+		Feature: "LibraryService",
+		Run: func(inst *Instance, check *Check) {
+			// Emby Web navigates to the URL, so only api_key authorizes it.
+			q := url.Values{"mediaSourceId": {inst.IDs.MediaSourceID}, "api_key": {inst.Token}}
+			resp, err := inst.Send(Request{Method: "GET", Path: "/Items/" + inst.IDs.MovieID + "/Download", Query: q}, false)
+			if err != nil {
+				check.Errorf("download: %v", err)
+				return
+			}
+			_, params, _ := mime.ParseMediaType(resp.Header.Get("Content-Disposition"))
+			if resp.Status != 200 || len(resp.Body) == 0 || resp.Header.Get("Content-Length") != strconv.Itoa(len(resp.Body)) ||
+				!strings.HasPrefix(resp.Header.Get("Content-Disposition"), "attachment") || path.Ext(params["filename"]) == "" {
+				check.Errorf("download: status %d, %d bytes, Content-Disposition %q, want 200 attachment with the whole file",
+					resp.Status, len(resp.Body), resp.Header.Get("Content-Disposition"))
 			}
 		},
 	},

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"math"
+	"mime"
 	"net/http"
 	"net/url"
 	"path"
@@ -147,6 +148,25 @@ func (s *Server) streamVideo(w http.ResponseWriter, r *http.Request, token strin
 		return
 	}
 	defer func() { _ = file.Close() }()
+	serveMediaFile(w, r, file, item)
+}
+
+// downloadItem serves the original file as an attachment for the "Download"
+// command. Emby Web navigates to the URL, so the token arrives as api_key.
+// The file name is built from the item name: Path is never sent to clients.
+func (s *Server) downloadItem(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+	item, found := s.findItem(r.PathValue("item"))
+	if !found || item.IsFolder() {
+		fail(w, 404, "NotFound")
+		return
+	}
+	file, err := s.media.Open(item)
+	if err != nil {
+		fail(w, 404, "MediaUnavailable")
+		return
+	}
+	defer func() { _ = file.Close() }()
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": item.Name + path.Ext(item.Path)}))
 	serveMediaFile(w, r, file, item)
 }
 
@@ -361,6 +381,7 @@ func (s *Server) playbackRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /items/{item}/playbackinfo", s.protect(s.playbackInfo))
 	// Emby also answers GET for clients that cannot post a profile.
 	mux.HandleFunc("GET /items/{item}/playbackinfo", s.protect(s.playbackInfo))
+	mux.HandleFunc("GET /items/{item}/download", s.protect(s.downloadItem))
 	for _, prefix := range []string{"/videos", "/audio"} {
 		mux.HandleFunc("GET "+prefix+"/{item}/{stream}", s.protect(s.streamVideo))
 		mux.HandleFunc("HEAD "+prefix+"/{item}/{stream}", s.protect(s.streamVideo))

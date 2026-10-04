@@ -212,7 +212,6 @@ var knownFailures = map[string]knownFailure{
 	"getItemsByIdAncestors":            notCalledByWeb,
 	"getItemsByIdCriticreviews":        notCalledByWeb,
 	"getItemsByIdDeleteinfo":           partialService,
-	"getItemsByIdDownload":             partialService,
 	"getItemsByIdFile":                 partialService,
 	"getItemsByIdThemesongs":           partialService,
 	"getItemsByIdThemevideos":          partialService,
