@@ -18,6 +18,7 @@ type WebDirectory struct {
 	index []byte
 }
 
+// OpenWebDirectory serves a local Emby Web copy confined to directory.
 func OpenWebDirectory(directory string) (*WebDirectory, error) {
 	root, err := os.OpenRoot(directory)
 	if err != nil {
@@ -29,7 +30,7 @@ func OpenWebDirectory(directory string) (*WebDirectory, error) {
 		_ = root.Close()
 		return nil, errors.New("web directory requires a readable index.html")
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	const maxIndex = 1 << 20
 	index, err := io.ReadAll(io.LimitReader(file, maxIndex+1))
 	if err != nil || len(index) > maxIndex {
@@ -48,6 +49,7 @@ func OpenWebDirectory(directory string) (*WebDirectory, error) {
 	return web, nil
 }
 
+// Close releases the web directory root.
 func (web *WebDirectory) Close() error { return web.root.Close() }
 
 func (web *WebDirectory) open(name string) (*os.File, error) {
@@ -64,7 +66,7 @@ func (web *WebDirectory) open(name string) (*os.File, error) {
 }
 
 func (web *WebDirectory) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" && r.Method != "HEAD" {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		fail(w, 405, "MethodNotAllowed")
 		return
@@ -89,7 +91,7 @@ func (web *WebDirectory) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "AssetNotFound")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	info, err := file.Stat()
 	if err != nil {
 		fail(w, 404, "AssetNotFound")

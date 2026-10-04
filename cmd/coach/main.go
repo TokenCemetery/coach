@@ -1,3 +1,4 @@
+// Command coach serves an Emby-compatible API, Emby Web assets, and local media.
 package main
 
 import (
@@ -41,7 +42,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("open state: %w", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if *init {
 		if s.Initialized() {
 			return errors.New("already initialized; existing state was not modified")
@@ -68,7 +69,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		defer local.Close()
+		defer func() { _ = local.Close() }()
 		web = local
 	}
 	if *upstream != "" {
@@ -89,7 +90,7 @@ func run() error {
 			return fmt.Errorf("scan media: %w", err)
 		}
 		slog.Info("Media scan complete", "videos", len(catalog.Items), "folders", len(catalog.Folders), "skipped", catalog.Skipped)
-		defer catalog.Close()
+		defer func() { _ = catalog.Close() }()
 	}
 	api := server.New(s, *name, web, catalog)
 	defer api.Close()

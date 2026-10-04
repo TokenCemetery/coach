@@ -146,7 +146,7 @@ func (s *Server) streamVideo(w http.ResponseWriter, r *http.Request, token strin
 		fail(w, 404, "MediaUnavailable")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	serveMediaFile(w, r, file, item)
 }
 

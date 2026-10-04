@@ -19,7 +19,7 @@ func testStore(t *testing.T) (*Store, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	if err := s.Initialize("viewer", "test-only-password"); err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func testStore(t *testing.T) (*Store, string) {
 func TestStateProtectionAndExpiry(t *testing.T) {
 	s, dir := testStore(t)
 	if second, err := Open(dir); err == nil {
-		second.Close()
+		_ = second.Close()
 		t.Fatal("second process could open state")
 	}
 	if s.Initialize("replacement", "another-test-password") == nil {
@@ -90,7 +90,7 @@ func TestCorruptAndFutureStateAreNotReset(t *testing.T) {
 			t.Fatal(err)
 		}
 		if s, err := Open(dir); err == nil {
-			s.Close()
+			_ = s.Close()
 			t.Fatal("invalid state accepted")
 		}
 		b, err := os.ReadFile(file)

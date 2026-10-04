@@ -41,7 +41,7 @@ func TestPlaybackReportRetriesSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	h = New(store, "test", nil, catalog).Handler()
 	report("/Progress", "first", 25000000)
 	report("", "first", 0)
@@ -70,7 +70,7 @@ func TestPlaybackReportRetriesSurviveRestart(t *testing.T) {
 
 func TestPlaybackRetryWindowBounded(t *testing.T) {
 	var session state.Session
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		if !acceptPlayReport(&session, "movie", strconv.Itoa(i), "start") {
 			t.Fatal("new start refused")
 		}

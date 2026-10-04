@@ -2,7 +2,7 @@ package server
 
 import (
 	"bufio"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // RFC 6455 handshake requires SHA-1; not used for security
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -271,7 +271,7 @@ func (s *Server) serveSocket(sock *socket) {
 func (s *Server) socketMessage(sock *socket, raw []byte) error {
 	var message struct{ MessageType string }
 	if json.Unmarshal(raw, &message) != nil {
-		return nil
+		return nil //nolint:nilerr // malformed JSON keeps the socket open
 	}
 	if strings.EqualFold(message.MessageType, "KeepAlive") {
 		return sock.send(object{"MessageType": "KeepAlive"})
@@ -292,7 +292,7 @@ func websocketAccept(r *http.Request) (string, bool) {
 	if raw, err := base64.StdEncoding.DecodeString(key); err != nil || len(raw) != 16 {
 		return "", false
 	}
-	sum := sha1.Sum([]byte(key + websocketGUID))
+	sum := sha1.Sum([]byte(key + websocketGUID)) //nolint:gosec // RFC 6455 accept value
 	return base64.StdEncoding.EncodeToString(sum[:]), true
 }
 

@@ -13,8 +13,10 @@ import (
 var seasonDirectory = regexp.MustCompile(`(?i)^season[ ._-]*(\d{1,3})$`)
 var episodeName = regexp.MustCompile(`(?i)(?:^|[ ._-])s(\d{1,3})e(\d{1,4})(?:$|[ ._-])`)
 
+// SeriesLibraryID returns the ID of the TV Shows library for this catalogue.
 func (c *Catalog) SeriesLibraryID() string { return stableID("series\x00" + c.ID) }
 
+// Type returns the Emby item type; items without a Kind are movies.
 func (i Item) Type() string {
 	if i.Kind == "" {
 		return "Movie"
@@ -22,8 +24,10 @@ func (i Item) Type() string {
 	return i.Kind
 }
 
+// IsFolder reports whether the item is a series or season.
 func (i Item) IsFolder() bool { return i.Kind == "Series" || i.Kind == "Season" }
 
+// Parent returns the parent item ID, or the movie library ID for top-level items.
 func (c *Catalog) Parent(item Item) string {
 	if item.ParentID != "" {
 		return item.ParentID

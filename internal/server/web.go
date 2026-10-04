@@ -21,7 +21,7 @@ func WebAssets(origin string) (http.Handler, error) {
 	transport.Proxy = nil
 	client := &http.Client{Transport: transport, Timeout: 20 * time.Second, CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" && r.Method != "HEAD" {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
 			fail(w, 405, "MethodNotAllowed")
 			return
@@ -48,14 +48,14 @@ func WebAssets(origin string) (http.Handler, error) {
 			fail(w, 502, "AssetUnavailable")
 			return
 		}
-		res, err := client.Do(req)
+		res, err := client.Do(req) //nolint:gosec // host is the operator-configured upstream; only validated asset paths and "v" are forwarded
 		if err != nil {
 			fail(w, 502, "AssetUnavailable")
 			return
 		}
-		defer res.Body.Close()
-		if res.StatusCode != 200 {
-			if res.StatusCode == 404 {
+		defer func() { _ = res.Body.Close() }()
+		if res.StatusCode != http.StatusOK {
+			if res.StatusCode == http.StatusNotFound {
 				fail(w, 404, "AssetNotFound")
 			} else {
 				fail(w, 502, "AssetUnavailable")
@@ -67,8 +67,8 @@ func WebAssets(origin string) (http.Handler, error) {
 				w.Header().Set(key, v)
 			}
 		}
-		w.WriteHeader(200)
-		if r.Method != "HEAD" {
+		w.WriteHeader(http.StatusOK)
+		if r.Method != http.MethodHead {
 			_, _ = io.Copy(w, res.Body)
 		}
 	}), nil

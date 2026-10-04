@@ -31,6 +31,7 @@ type Catalog struct {
 	root    *os.Root
 }
 
+// Item is a movie, series, season, or episode in the catalogue.
 type Item struct {
 	ID            string
 	Name          string
@@ -67,6 +68,7 @@ func (c *Catalog) Open(item Item) (*os.File, error) {
 	return file, nil
 }
 
+// Close releases the catalogue root. Items can no longer be opened afterwards.
 func (c *Catalog) Close() error {
 	if c == nil || c.root == nil {
 		return nil
@@ -74,6 +76,7 @@ func (c *Catalog) Close() error {
 	return c.root.Close()
 }
 
+// Stream is an audio, video, or subtitle track reported by FFprobe.
 type Stream struct {
 	Index    int
 	Type     string
@@ -142,7 +145,7 @@ func scan(ctx context.Context, directory string, probe func(context.Context, *os
 			catalog.Skipped++
 			return nil
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		info, err := file.Stat()
 		if err != nil || !info.Mode().IsRegular() {
 			catalog.Skipped++
@@ -174,7 +177,7 @@ func scan(ctx context.Context, directory string, probe func(context.Context, *os
 		if err != nil {
 			return errors.New("cannot read media directory")
 		}
-		defer directory.Close()
+		defer func() { _ = directory.Close() }()
 		for {
 			if err := ctx.Err(); err != nil {
 				return err

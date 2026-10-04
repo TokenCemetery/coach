@@ -43,12 +43,12 @@ func TestScanReadOnlyStableAndIsolated(t *testing.T) {
 	if len(first.Items) != 2 || first.Skipped != 1 {
 		t.Fatalf("movies=%d skipped=%d", len(first.Items), first.Skipped)
 	}
-	defer first.Close()
+	defer func() { _ = first.Close() }()
 	second, err := scan(context.Background(), dir, probe)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer second.Close()
+	defer func() { _ = second.Close() }()
 	// The open scan root differs between runs by construction; the catalogue
 	// content it produces must not.
 	if first.ID != second.ID || first.Skipped != second.Skipped || !reflect.DeepEqual(first.Items, second.Items) {

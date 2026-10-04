@@ -25,7 +25,7 @@ func TestImageAccessScopedRevokedAndDurable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	got, version, err := store.AuthenticateImageTag("item", tag)
 	if err != nil || got.ID != session.ID || version != revision {
 		t.Fatal("image grant lost on restart")

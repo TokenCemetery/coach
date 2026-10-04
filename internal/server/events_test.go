@@ -3,8 +3,10 @@ package server
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -18,9 +20,9 @@ import (
 
 func openEventSocket(t *testing.T, server *httptest.Server, token string) (net.Conn, *bufio.Reader) {
 	t.Helper()
-	response, conn, reader := socketRequest(t, server, "?api_key="+token, "13", exampleKey)
-	if response.StatusCode != 101 {
-		t.Fatalf("upgrade: %d", response.StatusCode)
+	status, _, conn, reader := socketRequest(t, server, "?api_key="+token, "13", exampleKey)
+	if status != http.StatusSwitchingProtocols {
+		t.Fatalf("upgrade: %d", status)
 	}
 	if kind, _ := expectSocketMessage(t, reader); kind != "ForceKeepAlive" {
 		t.Fatal("initial message must precede events")
@@ -48,7 +50,8 @@ func expectDisconnected(t *testing.T, conn net.Conn, reader *bufio.Reader) {
 	if err == nil {
 		t.Fatal("received data after connection should have closed")
 	}
-	if e, ok := err.(net.Error); ok && e.Timeout() {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
 		t.Fatal("connection remained open")
 	}
 }
@@ -128,7 +131,7 @@ func TestEventOrderAndFailedPersistence(t *testing.T) {
 	token := login(t, api.Handler())
 	session, _ := store.Authenticate(token)
 	server, client := net.Pipe()
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	sock := &socket{conn: server, out: make(chan []byte, socketQueue), token: token, userID: session.UserID, sessionID: session.ID}
 	if !api.registerSocket(sock) {
 		t.Fatal("registration failed")
@@ -201,7 +204,7 @@ func TestEventQueueBoundAndUserIsolation(t *testing.T) {
 		t.Fatal("overflowed subscriber was retained")
 	}
 	_ = slowPeer.SetReadDeadline(time.Now().Add(time.Second))
-	if _, err := slowPeer.Read(make([]byte, 1)); err != io.EOF {
+	if _, err := slowPeer.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
 		t.Fatalf("slow subscriber: %v", err)
 	}
 	if api.registerSocket(other) {

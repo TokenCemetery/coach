@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -34,7 +35,7 @@ func TestLocalWebAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer web.Close()
+	defer func() { _ = web.Close() }()
 	w := request(web, "GET", "/web/index.html", "", "", "")
 	expectStatus(t, w, 200)
 	if !strings.Contains(w.Body.String(), `data-appversion="`+CompatibilityVersion+`"`) || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
@@ -54,7 +55,7 @@ func TestLocalWebAssets(t *testing.T) {
 	if w.Body.Len() != 0 || w.Header().Get("Content-Length") != "11" {
 		t.Fatal("incorrect HEAD response")
 	}
-	r := httptest.NewRequest("GET", "/web/app.js", nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/web/app.js", nil)
 	r.Header.Set("Range", "bytes=0-3")
 	w = httptest.NewRecorder()
 	web.ServeHTTP(w, r)

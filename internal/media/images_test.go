@@ -19,7 +19,7 @@ func TestPrimaryImagesBoundedAndConfined(t *testing.T) {
 		t.Fatal(err)
 	}
 	catalog := &Catalog{root: root}
-	defer catalog.Close()
+	defer func() { _ = catalog.Close() }()
 	var encoded bytes.Buffer
 	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 2, 3))); err != nil {
 		t.Fatal(err)
@@ -34,7 +34,7 @@ func TestPrimaryImagesBoundedAndConfined(t *testing.T) {
 		t.Fatal(err)
 	}
 	content, err := io.ReadAll(file)
-	file.Close()
+	_ = file.Close()
 	if err != nil || !bytes.Equal(content, encoded.Bytes()) || info.Width != 2 || info.Height != 3 || info.MIME != "image/png" {
 		t.Fatal("incorrect image")
 	}
@@ -81,7 +81,7 @@ func TestPrimaryImagesBoundedAndConfined(t *testing.T) {
 	if err := f.Truncate(maxImageBytes + 1); err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	_ = f.Close()
 	if _, found := catalog.PrimaryImage(item); found {
 		t.Fatal("oversized image accepted")
 	}

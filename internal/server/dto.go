@@ -102,16 +102,12 @@ func (s *Server) rootFolderDTO(serverID string) object {
 	return dto
 }
 
-// libraryDTO is the CollectionFolder for Coach's single movie library.
+// collectionDTO is the CollectionFolder for the Movies or TV Shows library.
 //
 // detail selects the richer body Emby returns from /Users/{id}/Items/{id}. Only
 // that response carries Subviews, and Emby Web's library screen dereferences it
 // without a guard (videos.js: this.item.Subviews.includes(...)), so a library
 // served without Subviews breaks the screen outright.
-func (s *Server) libraryDTO(serverID string, detail bool) object {
-	return s.collectionDTO(s.media.ID, serverID, detail)
-}
-
 func (s *Server) collectionDTO(id, serverID string, detail bool) object {
 	name, collectionType, subview := "Movies", "movies", "movies"
 	if id == s.media.SeriesLibraryID() {

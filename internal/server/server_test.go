@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,7 +30,7 @@ func newTestServer(t *testing.T) (*state.Store, http.Handler, string) {
 }
 
 func request(h http.Handler, method, path, contentType, body, token string) *httptest.ResponseRecorder {
-	r := httptest.NewRequest(method, path, strings.NewReader(body))
+	r := httptest.NewRequestWithContext(context.Background(), method, path, strings.NewReader(body))
 	if contentType != "" {
 		r.Header.Set("Content-Type", contentType)
 	}
@@ -120,7 +121,7 @@ func TestEmbyLoginSettingsRestartLogout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }()
 	h = New(reopened, "Coach test", nil, nil).Handler()
 	if reopened.Snapshot().ServerID != initial.ServerID || reopened.Snapshot().User.ID != uid {
 		t.Fatal("identity changed on restart")
@@ -144,7 +145,7 @@ func TestEmbyLoginSettingsRestartLogout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer final.Close()
+	defer func() { _ = final.Close() }()
 	if _, err := final.Authenticate(token); err == nil {
 		t.Fatal("logout did not survive restart")
 	}
@@ -158,7 +159,7 @@ func TestTokenFormsAndAccessIsolation(t *testing.T) {
 	}
 	for _, header := range []string{"Authorization", "X-Emby-Authorization"} {
 		for _, scheme := range []string{"Emby", "MediaBrowser"} {
-			r := httptest.NewRequest("GET", "/Users/Me", nil)
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/Users/Me", nil)
 			r.Header.Set(header, fmt.Sprintf(`%s Client="Web, Test", Token="%s"`, scheme, token))
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)

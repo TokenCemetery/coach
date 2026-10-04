@@ -17,10 +17,13 @@ import (
 // CompatibilityVersion selects the API branch used by the reference Emby Web.
 // It is not Coach's product version or a claim of full Emby compatibility.
 const CompatibilityVersion = "4.10.0.40"
+
+// Version is the Coach product version.
 const Version = "0.1.0"
 
 type object map[string]any
 
+// Server serves the API for one state store and an optional media catalogue.
 type Server struct {
 	store       *state.Store
 	name        string
@@ -34,6 +37,7 @@ type Server struct {
 	itemMu      sync.Mutex
 }
 
+// New creates a Server. web and catalog may be nil.
 func New(store *state.Store, name string, web http.Handler, catalog *media.Catalog) *Server {
 	return &Server{store: store, name: name, web: web, media: catalog, logins: loginLimit{active: make(chan struct{}, 2)}, connections: make(map[*socket]struct{})}
 }
@@ -116,6 +120,7 @@ func sessionDTO(d state.Data, session state.Session) object {
 	return object{"Id": session.ID, "ServerId": d.ServerID, "UserId": session.UserID, "UserName": d.User.Name, "Client": session.Client, "DeviceId": session.DeviceID, "DeviceName": session.DeviceName, "ApplicationVersion": session.Version, "AdditionalUsers": []any{}, "PlayState": object{"IsPaused": false, "IsMuted": false}, "Capabilities": caps, "SupportsRemoteControl": false}
 }
 
+// Handler returns the HTTP handler for the API, WebSocket, and web assets.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +141,7 @@ func (s *Server) Handler() http.Handler {
 	// answer with a CSS content type or the browser refuses the response.
 	branding := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css")
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 	}
 	mux.HandleFunc("GET /branding/css", branding)
 	mux.HandleFunc("GET /branding/css.css", branding)
@@ -168,7 +173,7 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		s.disconnectSession(session.ID)
-		w.WriteHeader(204)
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	mux.HandleFunc("GET /sessions", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		respond(w, 200, []any{sessionDTO(s.store.Snapshot(), session)})
@@ -245,13 +250,13 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Emby-Authorization, X-Emby-Token, X-MediaBrowser-Token, X-Emby-Client, X-Emby-Client-Version, X-Emby-Device-Id, X-Emby-Device-Name")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(204)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if r.URL.Path == "/" && (r.Method == "GET" || r.Method == "HEAD") {
+		if r.URL.Path == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 			if s.web != nil {
-				http.Redirect(w, r, "/web/index.html", 302)
+				http.Redirect(w, r, "/web/index.html", http.StatusFound)
 			} else {
 				respond(w, 200, object{"ProductName": "Coach", "Version": Version, "WebClientConfigured": false})
 			}
@@ -318,5 +323,5 @@ func (s *Server) changed(w http.ResponseWriter, err error) {
 		s.internalError(w)
 		return
 	}
-	w.WriteHeader(204)
+	w.WriteHeader(http.StatusNoContent)
 }

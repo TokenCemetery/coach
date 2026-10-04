@@ -1,8 +1,8 @@
 BIN := bin/coach
 
-.PHONY: all build build-linux test vet fmt check clean
+.PHONY: all build build-linux test vet lint check clean
 
-all: vet test build
+all: lint test build
 
 build:
 	go build -o $(BIN) ./cmd/coach
@@ -16,8 +16,8 @@ test:
 vet:
 	go vet ./...
 
-fmt:
-	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
+lint:
+	golangci-lint run ./...
 
 check: build
 	node scripts/check-emby-client.mjs

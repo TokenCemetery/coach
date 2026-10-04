@@ -29,7 +29,7 @@ func streamFixture(t *testing.T, content []byte) (string, http.Handler) {
 			fail(w, 404, "MediaUnavailable")
 			return
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		serveMediaFile(w, r, file, media.Item{ID: "movie", Container: "mp4"})
 	})
 }
@@ -47,7 +47,7 @@ func TestStreamRangesAndValidators(t *testing.T) {
 		{"GET", "bytes=-2", "89", "bytes 8-9/10", 206},
 		{"GET", "bytes=10-", "invalid range: failed to overlap\n", "bytes */10", 416},
 	} {
-		r := httptest.NewRequest(c.method, "/", nil)
+		r := httptest.NewRequestWithContext(t.Context(), c.method, "/", nil)
 		r.Header.Set("Range", c.byteRange)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
@@ -60,7 +60,7 @@ func TestStreamRangesAndValidators(t *testing.T) {
 	if !strings.HasPrefix(etag, `W/"`) || first.Header().Get("Content-Type") != "video/mp4" {
 		t.Fatal("missing weak validator or video MIME")
 	}
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	r.Header.Set("If-None-Match", etag)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -113,11 +113,15 @@ func TestStreamOutlivesServerWriteTimeout(t *testing.T) {
 	client := s.Client()
 	client.Timeout = 5 * time.Second
 	started := time.Now()
-	response, err := client.Get(s.URL)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, s.URL, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	response, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
 	got, err := io.ReadAll(response.Body)
 	if err != nil || !bytes.Equal(got, content) {
 		t.Fatalf("stream was truncated: bytes=%d error=%v", len(got), err)
@@ -173,8 +177,8 @@ func (w blockedStreamWriter) SetWriteDeadline(deadline time.Time) error {
 
 func TestStreamBlockedWriteTimesOut(t *testing.T) {
 	server, client := net.Pipe()
-	defer server.Close()
-	defer client.Close()
+	defer func() { _ = server.Close() }()
+	defer func() { _ = client.Close() }()
 	w := blockedStreamWriter{httptest.NewRecorder(), server}
 	stream := &streamWriter{ResponseWriter: w, controller: http.NewResponseController(w)}
 	done := make(chan error, 1)
@@ -202,7 +206,7 @@ func TestStreamCancellationClosesFile(t *testing.T) {
 	if err := file.Truncate(64 << 20); err != nil {
 		t.Fatal(err)
 	}
-	file.Close()
+	_ = file.Close()
 	done := make(chan error, 1)
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f, err := os.Open(name)
@@ -216,7 +220,7 @@ func TestStreamCancellationClosesFile(t *testing.T) {
 	defer s.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	r, err := http.NewRequestWithContext(ctx, "GET", s.URL, nil)
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, s.URL, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +232,7 @@ func TestStreamCancellationClosesFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	cancel()
-	response.Body.Close()
+	_ = response.Body.Close()
 	select {
 	case err := <-done:
 		if err != nil {
@@ -240,12 +244,16 @@ func TestStreamCancellationClosesFile(t *testing.T) {
 	if err := os.Remove(name); err != nil {
 		t.Fatal(err)
 	}
-	response, err = s.Client().Get(s.URL)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, s.URL, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
-	if response.StatusCode != 404 {
+	response, err = s.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusNotFound {
 		t.Fatal("missing file did not return 404")
 	}
 }

@@ -1,3 +1,5 @@
+// Package server implements the Emby-compatible HTTP API, WebSocket events, and
+// Emby Web asset serving.
 package server
 
 import (

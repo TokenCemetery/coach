@@ -24,7 +24,7 @@ func TestScanSeriesHierarchy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer catalog.Close()
+	defer func() { _ = catalog.Close() }()
 	if len(catalog.Items) != 6 || len(catalog.Folders) != 5 {
 		t.Fatalf("items=%d folders=%d", len(catalog.Items), len(catalog.Folders))
 	}
@@ -41,7 +41,7 @@ func TestScanSeriesHierarchy(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		file.Close()
+		_ = file.Close()
 	}
 	if episodes != 4 {
 		t.Fatalf("episodes=%d", episodes)
@@ -50,7 +50,7 @@ func TestScanSeriesHierarchy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer again.Close()
+	defer func() { _ = again.Close() }()
 	if !reflect.DeepEqual(catalog.Items, again.Items) || !reflect.DeepEqual(catalog.Folders, again.Folders) {
 		t.Fatal("hierarchy changed on rescan")
 	}

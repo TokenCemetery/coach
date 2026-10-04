@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"image"
 	"image/png"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -26,7 +27,7 @@ func TestSignedImageHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer catalog.Close()
+	defer func() { _ = catalog.Close() }()
 	catalog.Items = []media.Item{{ID: "movie", Path: "Movie.mp4"}, {ID: "other", Path: "Other.mp4"}}
 	var content bytes.Buffer
 	if err := png.Encode(&content, image.NewRGBA(image.Rect(0, 0, 2, 3))); err != nil {
@@ -63,7 +64,7 @@ func TestSignedImageHTTP(t *testing.T) {
 		t.Fatal("incorrect image response")
 	}
 	etag := w.Header().Get("ETag")
-	r := httptest.NewRequest("GET", imageURL, nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, imageURL, nil)
 	r.Header.Set("If-None-Match", etag)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -88,7 +89,7 @@ func TestSignedImageHTTP(t *testing.T) {
 	}
 	imageURL = "/Items/movie/Images/Primary?tag=" + newTag
 	expectStatus(t, request(h, "POST", "/Sessions/Logout", "", "", token), 204)
-	r = httptest.NewRequest("GET", imageURL, nil)
+	r = httptest.NewRequestWithContext(t.Context(), http.MethodGet, imageURL, nil)
 	r.Header.Set("If-None-Match", etag)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)

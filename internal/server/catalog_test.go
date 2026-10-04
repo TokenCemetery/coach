@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -87,7 +88,7 @@ func TestMovieCatalog(t *testing.T) {
 	expectStatus(t, request(h, "GET", "/Users/other/Items/a", "", "", token), 403)
 	expectStatus(t, request(h, "GET", "/Items/a?UserId=other", "", "", token), 403)
 	// HEAD inherits GET routing without mutating the catalogue.
-	r := httptest.NewRequest("HEAD", "/Items/a", nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodHead, "/Items/a", nil)
 	r.Header.Set("X-Emby-Token", token)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)

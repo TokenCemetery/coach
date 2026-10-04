@@ -22,6 +22,7 @@ import (
 const passwordIterations = 600000
 const maxStateBytes = 4 << 20
 
+// Errors returned by Store.
 var (
 	ErrCredentials  = errors.New("invalid credentials")
 	ErrSession      = errors.New("invalid or expired session")
@@ -29,6 +30,7 @@ var (
 	ErrStateLimit   = errors.New("state size limit reached")
 )
 
+// User is the single local account with its settings and playback state.
 type User struct {
 	ID            string
 	Name          string
@@ -54,6 +56,7 @@ type ItemState struct {
 // maxTrackedItems bounds the state file independently of its byte limit.
 const maxTrackedItems = 20000
 
+// Session is an authenticated client. Stored keyed by token hash, never by token.
 type Session struct {
 	ID           string
 	UserID       string
@@ -73,6 +76,7 @@ type PlaybackRecord struct {
 	Stopped bool
 }
 
+// Data is the persisted state file contents (schema v1).
 type Data struct {
 	SchemaVersion int
 	ServerID      string
@@ -80,6 +84,7 @@ type Data struct {
 	Sessions      map[string]Session
 }
 
+// Store holds the state in memory and writes every change to disk atomically.
 type Store struct {
 	mu   sync.RWMutex
 	path string
@@ -99,12 +104,12 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	lock, err := os.OpenFile(filepath.Join(dir, "state.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	lock, err := os.OpenFile(filepath.Join(dir, "state.lock"), os.O_CREATE|os.O_RDWR, 0600) //nolint:gosec // dir is the operator-selected data directory|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, err
 	}
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		lock.Close()
+		_ = lock.Close()
 		return nil, fmt.Errorf("data directory is already in use: %w", err)
 	}
 	s := &Store{path: filepath.Join(dir, "state.json"), lock: lock}
@@ -127,20 +132,23 @@ func Open(dir string) (*Store, error) {
 		err = errors.New("invalid or unsupported state schema")
 	}
 	if err != nil {
-		s.Close()
+		_ = s.Close()
 		return nil, err
 	}
 	return s, nil
 }
 
+// Close releases the data directory lock.
 func (s *Store) Close() error { return s.lock.Close() }
 
+// Initialized reports whether a user has been created.
 func (s *Store) Initialized() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.data.SchemaVersion != 0
 }
 
+// Snapshot returns a deep copy of the current state.
 func (s *Store) Snapshot() Data {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -149,9 +157,9 @@ func (s *Store) Snapshot() Data {
 
 func clone(d Data) Data {
 	b, _ := json.Marshal(d)
-	var copy Data
-	_ = json.Unmarshal(b, &copy)
-	return copy
+	var out Data
+	_ = json.Unmarshal(b, &out)
+	return out
 }
 
 // update commits to disk before publishing a snapshot to readers.
@@ -173,13 +181,14 @@ func (s *Store) update(fn func(*Data) error) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
+	// After a successful rename this removal fails harmlessly.
+	defer func() { _ = os.Remove(f.Name()) }()
 	if _, err = f.Write(b); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err = f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err = f.Close(); err != nil {
@@ -194,10 +203,11 @@ func (s *Store) update(fn func(*Data) error) error {
 	if err != nil {
 		return err
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	return dir.Sync()
 }
 
+// Initialize creates the single local user. It fails if one already exists.
 func (s *Store) Initialize(name, password string) error {
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > 128 || len(password) < 12 || len(password) > 1024 {
@@ -223,6 +233,8 @@ func tokenHash(token string) string {
 	return hex.EncodeToString(h[:])
 }
 
+// Login verifies the credentials and stores a new 30-day session. It returns the
+// session token, which is not persisted.
 func (s *Store) Login(name, password string, client Session) (string, Session, error) {
 	s.mu.RLock()
 	u := s.data.User
@@ -256,6 +268,7 @@ func (s *Store) Login(name, password string, client Session) (string, Session, e
 	return token, client, err
 }
 
+// Authenticate returns the unexpired session for token.
 func (s *Store) Authenticate(token string) (Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -269,6 +282,7 @@ func (s *Store) Authenticate(token string) (Session, error) {
 	return v, nil
 }
 
+// Logout revokes the session for token.
 func (s *Store) Logout(token string) error {
 	return s.update(func(d *Data) error { delete(d.Sessions, tokenHash(token)); return nil })
 }
@@ -323,6 +337,8 @@ func (s *Store) SetItemSession(token, itemID string, fn func(*ItemState, *Sessio
 	})
 }
 
+// ReadPassword reads a bounded password and strips one trailing newline.
+// Initialize enforces the length limits.
 func ReadPassword(r io.Reader) (string, error) {
 	b, err := io.ReadAll(io.LimitReader(r, 1027))
 	if err != nil {

@@ -134,7 +134,7 @@ COACH_WEB_DIR=../emby-webui COACH_CHECK_MEDIA=1 node scripts/check-emby-client.m
 
 Другой экземпляр/бинарник можно указать через `EMBY_REFERENCE` и `COACH_BINARY`. Проверка ожидает web-версию 4.10.0.40; изменение версии требует пересмотра контракта. В отчёт выводятся SHA-256 модулей и маршруты без токенов. События приложения и хранилище браузера заменены минимальными адаптерами. В медиасценарии оригинальный ApiClient открывает WebSocket, принимает UserDataChanged и переподключается после рестарта; проверяется закрытие при logout. DOM, плеер и connection manager не проверяются.
 
-Те же команды есть в `Makefile`: `make` (vet, test, build), `make build-linux` (Linux amd64, `CGO_ENABLED=0`), `make fmt` (проверка gofmt), `make check` (сборка и Node-сценарий; переменные окружения передаются как выше), `make clean`.
+Те же команды есть в `Makefile`: `make` (lint, test, build), `make lint` (golangci-lint v2 по `.golangci.yml`, включая go vet и проверку gofmt/goimports; устанавливается отдельно), `make vet`, `make build-linux` (Linux amd64, `CGO_ENABLED=0`), `make check` (сборка и Node-сценарий; переменные окружения передаются как выше), `make clean`.
 
 В ограниченной среде Go может потребовать доступный `GOCACHE`, а сетевые тесты — разрешение на loopback-соединения. Результаты текущего запуска: [VALIDATION.md](docs/VALIDATION.md).
 

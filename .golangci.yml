@@ -1,0 +1,39 @@
+version: "2"
+
+linters:
+  enable:
+    - revive
+    - gosec
+    - usestdlibvars
+    - noctx
+    - bodyclose
+    - errorlint
+    - nilerr
+    - misspell
+    - unconvert
+    - nolintlint
+    - copyloopvar
+    - intrange
+  settings:
+    gosec:
+      excludes:
+        - G104 # duplicates errcheck
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: blank-imports
+        - name: redefines-builtin-id
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec]
+        text: "G304|G115"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+run:
+  timeout: 5m

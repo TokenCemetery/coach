@@ -11,7 +11,7 @@ func TestWebAssetsDoNotForwardCredentialsOrAPI(t *testing.T) {
 	var count int
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		count++
-		if r.Method != "GET" || r.URL.Path != "/web/example.js" || r.URL.RawQuery != "v=4.10.0.40" {
+		if r.Method != http.MethodGet || r.URL.Path != "/web/example.js" || r.URL.RawQuery != "v=4.10.0.40" {
 			t.Error("unexpected upstream target")
 		}
 		for _, key := range []string{"Authorization", "X-Emby-Token", "Cookie", "Referer"} {
@@ -28,7 +28,7 @@ func TestWebAssetsDoNotForwardCredentialsOrAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest("GET", "/web/example.js?v=4.10.0.40&api_key=secret&X-Emby-Token=secret", nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/web/example.js?v=4.10.0.40&api_key=secret&X-Emby-Token=secret", nil)
 	for _, key := range []string{"Authorization", "X-Emby-Token", "Cookie", "Referer"} {
 		r.Header.Set(key, "test-secret")
 	}
@@ -59,7 +59,7 @@ func TestWebAssetsRejectRedirectsAndInvalidOrigins(t *testing.T) {
 	targetCalls := 0
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { targetCalls++ }))
 	defer target.Close()
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, 302) }))
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, http.StatusFound) }))
 	defer upstream.Close()
 	proxy, err := WebAssets(upstream.URL)
 	if err != nil {

@@ -20,9 +20,10 @@ const (
 	exampleAccept = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 )
 
-func socketRequest(t *testing.T, server *httptest.Server, query, version, key string) (*http.Response, net.Conn, *bufio.Reader) {
+// socketRequest sends an upgrade request and returns the response status and headers.
+func socketRequest(t *testing.T, server *httptest.Server, query, version, key string) (int, http.Header, net.Conn, *bufio.Reader) {
 	t.Helper()
-	conn, err := net.Dial("tcp", server.Listener.Addr().String())
+	conn, err := (&net.Dialer{}).DialContext(t.Context(), "tcp", server.Listener.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +41,8 @@ func socketRequest(t *testing.T, server *httptest.Server, query, version, key st
 	if err != nil {
 		t.Fatal(err)
 	}
-	return response, conn, reader
+	_ = response.Body.Close()
+	return response.StatusCode, response.Header, conn, reader
 }
 
 func writeClientFrame(t *testing.T, conn net.Conn, opcode byte, payload []byte) {
@@ -71,13 +73,14 @@ func readServerFrame(t *testing.T, reader *bufio.Reader) (byte, []byte) {
 		t.Fatal("server frames must not be masked")
 	}
 	length := int(header[1] & 0x7F)
-	if length == 126 {
+	switch length {
+	case 126:
 		extended := make([]byte, 2)
 		if _, err := io.ReadFull(reader, extended); err != nil {
 			t.Fatal(err)
 		}
 		length = int(binary.BigEndian.Uint16(extended))
-	} else if length == 127 {
+	case 127:
 		t.Fatal("unexpected 64-bit frame length")
 	}
 	payload := make([]byte, length)
@@ -133,9 +136,9 @@ func TestWebSocketUpgradeRequiresTokenAndVersion(t *testing.T) {
 		{"malformed key", "?api_key=" + token, "13", "short", 400},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			response, _, _ := socketRequest(t, server, c.query, c.version, c.key)
-			if response.StatusCode != c.status {
-				t.Fatalf("status = %d, want %d", response.StatusCode, c.status)
+			status, _, _, _ := socketRequest(t, server, c.query, c.version, c.key)
+			if status != c.status {
+				t.Fatalf("status = %d, want %d", status, c.status)
 			}
 		})
 	}
@@ -147,14 +150,14 @@ func TestWebSocketKeepAliveAndControlFrames(t *testing.T) {
 	defer server.Close()
 	token := login(t, h)
 
-	response, conn, reader := socketRequest(t, server, "?api_key="+token+"&deviceId=test-device", "13", exampleKey)
-	if response.StatusCode != 101 {
-		t.Fatalf("status = %d, want 101", response.StatusCode)
+	status, header, conn, reader := socketRequest(t, server, "?api_key="+token+"&deviceId=test-device", "13", exampleKey)
+	if status != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want 101", status)
 	}
-	if got := response.Header.Get("Sec-WebSocket-Accept"); got != exampleAccept {
+	if got := header.Get("Sec-WebSocket-Accept"); got != exampleAccept {
 		t.Fatalf("Sec-WebSocket-Accept = %q, want %q", got, exampleAccept)
 	}
-	if got := response.Header.Get("Sec-WebSocket-Extensions"); got != "" {
+	if got := header.Get("Sec-WebSocket-Extensions"); got != "" {
 		t.Fatalf("no extension was offered, server answered %q", got)
 	}
 
@@ -226,9 +229,9 @@ func TestWebSocketRejectsMalformedFrames(t *testing.T) {
 		{"oversized", append([]byte{0x80 | opText, 0xFF}, binary.BigEndian.AppendUint64(nil, 1<<20)...), closeTooLarge},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			response, conn, reader := socketRequest(t, server, "?api_key="+token, "13", exampleKey)
-			if response.StatusCode != 101 {
-				t.Fatalf("status = %d, want 101", response.StatusCode)
+			status, _, conn, reader := socketRequest(t, server, "?api_key="+token, "13", exampleKey)
+			if status != http.StatusSwitchingProtocols {
+				t.Fatalf("status = %d, want 101", status)
 			}
 			if kind, _ := expectSocketMessage(t, reader); kind != "ForceKeepAlive" {
 				t.Fatalf("first message = %q", kind)

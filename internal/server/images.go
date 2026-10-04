@@ -53,7 +53,7 @@ func (s *Server) itemImage(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "ImageUnavailable")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	if revision != "" && revision != info.Revision {
 		fail(w, 404, "ImageChanged")
 		return

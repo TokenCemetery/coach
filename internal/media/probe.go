@@ -31,7 +31,7 @@ func (b *probeOutput) Write(p []byte) (int, error) {
 func runProbe(ctx context.Context, binary string, file *os.File, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd := exec.CommandContext(ctx, binary, args...) //nolint:gosec // binary is ffprobe from PATH; args are fixed by the callers
 	// Do not inherit FFREPORT, credentials, or other application environment variables.
 	cmd.Env = []string{"LC_ALL=C"}
 	if file != nil {

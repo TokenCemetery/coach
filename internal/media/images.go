@@ -3,8 +3,8 @@ package media
 import (
 	"fmt"
 	"image"
-	_ "image/jpeg"
-	_ "image/png"
+	_ "image/jpeg" // register JPEG for image.DecodeConfig
+	_ "image/png"  // register PNG for image.DecodeConfig
 	"io"
 	"os"
 	"path"
@@ -13,6 +13,7 @@ import (
 
 const maxImageBytes = 8 << 20
 
+// Image describes a validated local cover image without its pixels.
 type Image struct {
 	Revision      string
 	Width, Height int
@@ -42,16 +43,16 @@ func (c *Catalog) OpenImage(item Item) (*os.File, Image, error) {
 			}
 			info, err := file.Stat()
 			if err != nil || info.Size() <= 0 || info.Size() > maxImageBytes {
-				file.Close()
+				_ = file.Close()
 				continue
 			}
 			config, format, err := image.DecodeConfig(io.LimitReader(file, 1<<20))
 			if err != nil || (format != "jpeg" && format != "png") || config.Width <= 0 || config.Height <= 0 || config.Width > 16384 || config.Height > 16384 || int64(config.Width)*int64(config.Height) > 32_000_000 {
-				file.Close()
+				_ = file.Close()
 				continue
 			}
 			if _, err := file.Seek(0, io.SeekStart); err != nil {
-				file.Close()
+				_ = file.Close()
 				continue
 			}
 			return file, Image{Revision: stableID(fmt.Sprintf("%s\x00%d\x00%d", base+ext, info.Size(), info.ModTime().UnixNano())), Width: config.Width, Height: config.Height, MIME: "image/" + format}, nil
@@ -60,11 +61,12 @@ func (c *Catalog) OpenImage(item Item) (*os.File, Image, error) {
 	return nil, Image{}, os.ErrNotExist
 }
 
+// PrimaryImage reports the item's cover image metadata, if a valid one exists.
 func (c *Catalog) PrimaryImage(item Item) (Image, bool) {
 	file, info, err := c.OpenImage(item)
 	if err != nil {
 		return Image{}, false
 	}
-	file.Close()
+	_ = file.Close()
 	return info, true
 }
