@@ -123,6 +123,7 @@ func Open(dir string) (*Store, error) {
 		_ = lock.Close()
 		return nil, fmt.Errorf("data directory is already in use: %w", err)
 	}
+	removeInterruptedWrites(dir)
 	s := &Store{path: filepath.Join(dir, "state.json"), lock: lock}
 	f, err := os.Open(s.path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -147,6 +148,22 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// removeInterruptedWrites deletes the temp files of writes cut short by a
+// crash, which skip their deferred removal. The caller holds the directory
+// lock, so no write is in progress.
+func removeInterruptedWrites(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.Type().IsRegular() && (strings.HasPrefix(name, ".state-") || strings.HasPrefix(name, ".user-image-")) {
+			_ = os.Remove(filepath.Join(dir, name))
+		}
+	}
 }
 
 // Close releases the data directory lock.

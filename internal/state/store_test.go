@@ -149,3 +149,26 @@ func TestStateSizeLimitDoesNotChangeCommittedData(t *testing.T) {
 		t.Fatal("rejected update changed state")
 	}
 }
+
+func TestOpenRemovesInterruptedWrites(t *testing.T) {
+	s, dir := testStore(t)
+	_ = s.Close()
+	for _, name := range []string{".state-123", ".user-image-456", "user-image-kept", ".other"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reopened.Close() }()
+	if !reopened.Initialized() {
+		t.Fatal("committed state was not loaded")
+	}
+	for name, kept := range map[string]bool{".state-123": false, ".user-image-456": false, "user-image-kept": true, ".other": true, "state.json": true} {
+		if _, err := os.Stat(filepath.Join(dir, name)); (err == nil) != kept {
+			t.Fatalf("%s: kept=%v, want %v", name, err == nil, kept)
+		}
+	}
+}
