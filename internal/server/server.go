@@ -106,7 +106,7 @@ func (s *Server) internalError(w http.ResponseWriter) {
 }
 
 func (s *Server) publicInfo() object {
-	d := s.store.Snapshot()
+	d := s.store.Identity()
 	return object{"LocalAddresses": []string{}, "RemoteAddresses": []string{}, "ServerName": s.name, "Version": CompatibilityVersion, "Id": d.ServerID}
 }
 
@@ -185,7 +185,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("GET /system/ping", ping)
 	mux.HandleFunc("POST /system/ping", ping)
-	mux.HandleFunc("GET /users/public", func(w http.ResponseWriter, r *http.Request) { respond(w, 200, []any{publicUser(s.store.Snapshot())}) })
+	mux.HandleFunc("GET /users/public", func(w http.ResponseWriter, r *http.Request) { respond(w, 200, []any{publicUser(s.store.Identity())}) })
 	mux.HandleFunc("GET /branding/configuration", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, object{"LoginDisclaimer": "", "CustomCss": ""})
 	})

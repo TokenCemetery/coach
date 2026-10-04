@@ -205,3 +205,21 @@ func TestSetItemsIsAllOrNothing(t *testing.T) {
 		t.Fatalf("unmark at the limit: %v, %d items", err, len(s.Snapshot().User.Items))
 	}
 }
+
+func TestIdentityCarriesOnlyPublicFields(t *testing.T) {
+	s, _ := testStore(t)
+	token, _, err := s.Login("viewer", "test-only-password", Session{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Change(token, func(d *Data, _ *Session) { d.User.Items = map[string]ItemState{"a": {Played: true}} }); err != nil {
+		t.Fatal(err)
+	}
+	full, id := s.Snapshot(), s.Identity()
+	if id.ServerID != full.ServerID || id.User.ID != full.User.ID || id.User.Name != "viewer" {
+		t.Fatalf("identity %+v", id)
+	}
+	if id.User.Items != nil || id.Sessions != nil || id.User.PasswordHash != nil {
+		t.Fatal("identity carries private state")
+	}
+}

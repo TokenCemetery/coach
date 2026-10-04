@@ -176,6 +176,14 @@ func (s *Store) Initialized() bool {
 	return s.data.SchemaVersion != 0
 }
 
+// Identity returns only the server ID and the user's ID and name, without
+// the deep copy Snapshot makes; anonymous endpoints need nothing else.
+func (s *Store) Identity() Data {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return Data{ServerID: s.data.ServerID, User: User{ID: s.data.User.ID, Name: s.data.User.Name}}
+}
+
 // Snapshot returns a deep copy of the current state.
 func (s *Store) Snapshot() Data {
 	s.mu.RLock()
@@ -282,6 +290,11 @@ func (s *Store) Login(name, password string, client Session) (string, Session, e
 	client.ID, client.UserID = randomID(), u.ID
 	client.ExpiresAt = time.Now().UTC().Add(30 * 24 * time.Hour)
 	err = s.update(func(d *Data) error {
+		// The password may have changed while it was verified without the lock;
+		// a session must not outlive the revocation that change performs.
+		if subtle.ConstantTimeCompare(d.User.PasswordHash, u.PasswordHash) != 1 {
+			return ErrCredentials
+		}
 		for key, session := range d.Sessions {
 			if !session.ExpiresAt.After(time.Now()) {
 				delete(d.Sessions, key)
