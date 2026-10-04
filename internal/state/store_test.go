@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,5 +171,37 @@ func TestOpenRemovesInterruptedWrites(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, name)); (err == nil) != kept {
 			t.Fatalf("%s: kept=%v, want %v", name, err == nil, kept)
 		}
+	}
+}
+
+func TestSetItemsIsAllOrNothing(t *testing.T) {
+	s, _ := testStore(t)
+	token, _, err := s.Login("viewer", "test-only-password", Session{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Change(token, func(d *Data, _ *Session) {
+		d.User.Items = map[string]ItemState{}
+		for i := range maxTrackedItems - 2 {
+			d.User.Items[fmt.Sprintf("old-%d", i)] = ItemState{IsFavorite: true}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	played := func(st *ItemState) { st.Played = true }
+	// Three new items do not fit into the two free places: none is saved.
+	if _, err := s.SetItems(token, []string{"a", "b", "c"}, played); !errors.Is(err, ErrStateLimit) {
+		t.Fatalf("over the limit: %v", err)
+	}
+	if items := s.Snapshot().User.Items; items["a"].Played || items["b"].Played {
+		t.Fatal("a failed batch saved some items")
+	}
+	if _, err := s.SetItems(token, []string{"a", "b", "old-1"}, played); err != nil {
+		t.Fatal(err)
+	}
+	// At the limit, unmarking items that have no state adds nothing.
+	saved, err := s.SetItems(token, []string{"a", "never-seen"}, func(st *ItemState) { st.Played = false })
+	if err != nil || saved["a"].Played || len(s.Snapshot().User.Items) != maxTrackedItems-1 {
+		t.Fatalf("unmark at the limit: %v, %d items", err, len(s.Snapshot().User.Items))
 	}
 }

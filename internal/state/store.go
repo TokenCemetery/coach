@@ -413,6 +413,47 @@ func (s *Store) SetItemSession(token, itemID string, fn func(*ItemState, *Sessio
 	})
 }
 
+// SetItems applies fn to several items in one transaction: either every item
+// is saved, or none is when the session is invalid or the tracked-item limit
+// would be exceeded. Items fn leaves empty are dropped and never count toward
+// the limit. It returns the resulting state of each item.
+func (s *Store) SetItems(token string, itemIDs []string, fn func(*ItemState)) (map[string]ItemState, error) {
+	saved := map[string]ItemState{}
+	err := s.update(func(d *Data) error {
+		session, ok := d.Sessions[tokenHash(token)]
+		if !ok || !session.ExpiresAt.After(time.Now()) {
+			return ErrSession
+		}
+		if d.User.Items == nil {
+			d.User.Items = map[string]ItemState{}
+		}
+		added := 0
+		for _, id := range itemIDs {
+			current, exists := d.User.Items[id]
+			fn(&current)
+			saved[id] = current
+			if !exists && current != (ItemState{}) {
+				added++
+			}
+		}
+		if added > 0 && len(d.User.Items)+added > maxTrackedItems {
+			return ErrStateLimit
+		}
+		for id, current := range saved {
+			if current == (ItemState{}) {
+				delete(d.User.Items, id)
+			} else {
+				d.User.Items[id] = current
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return saved, nil
+}
+
 // ReadPassword reads a bounded password and strips one trailing newline.
 // Initialize enforces the length limits.
 func ReadPassword(r io.Reader) (string, error) {

@@ -382,11 +382,9 @@ func (s *Server) setItemFlag(favorite, value bool) authenticated {
 		// Marking a series or season played marks its episodes, as in Emby; the
 		// folder's own Played is derived from them.
 		if !favorite && item.IsFolder() {
-			for _, episode := range s.folderEpisodes(item) {
-				if _, err := s.updateItem(token, episode, func(st *state.ItemState) { setPlayed(st, value) }); err != nil {
-					s.changed(w, err)
-					return
-				}
+			if err := s.setEpisodesPlayed(token, session.UserID, s.folderEpisodes(item), value); err != nil {
+				s.changed(w, err)
+				return
 			}
 			data := s.folderPlayedData(item, s.store.Snapshot().User.Items)
 			data["ItemId"] = item.ID
@@ -406,6 +404,27 @@ func (s *Server) setItemFlag(favorite, value bool) authenticated {
 		}
 		respond(w, 200, data)
 	}
+}
+
+// setEpisodesPlayed marks episodes in one transaction, so a failure leaves
+// none of them changed, then publishes each episode's new user data.
+func (s *Server) setEpisodesPlayed(token, userID string, episodes []media.Item, value bool) error {
+	ids := make([]string, len(episodes))
+	for i, episode := range episodes {
+		ids[i] = episode.ID
+	}
+	s.itemMu.Lock()
+	defer s.itemMu.Unlock()
+	saved, err := s.store.SetItems(token, ids, func(st *state.ItemState) { setPlayed(st, value) })
+	if err != nil {
+		return err
+	}
+	for _, episode := range episodes {
+		data := itemUserData(saved[episode.ID], episode.RunTimeTicks)
+		data["ItemId"] = episode.ID
+		s.publishUserData(userID, data)
+	}
+	return nil
 }
 
 func setPlayed(st *state.ItemState, value bool) {
