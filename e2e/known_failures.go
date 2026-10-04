@@ -322,7 +322,6 @@ var knownFailures = map[string]knownFailure{
 	"getMusicgenres":       unranked,
 	"getMusicgenresByName": unranked,
 	// NotificationsService
-	"getNotificationsTypes":  administration,
 	"postNotificationsAdmin": administration,
 	// OfficialRatingService
 	"getOfficialratings": unranked,
@@ -530,8 +529,7 @@ var knownFailures = map[string]knownFailure{
 	"postVideosByIdAlternatesourcesDelete": administration,
 	"postVideosMergeversions":              administration,
 	// WebAppService
-	"getWebConfigurationpage":  administration,
-	"getWebConfigurationpages": administration,
-	"getWebStrings":            administration,
-	"getWebStringset":          administration,
+	"getWebConfigurationpage": administration,
+	"getWebStrings":           administration,
+	"getWebStringset":         administration,
 }

@@ -241,7 +241,9 @@ func (s *Server) Handler() http.Handler {
 	emptyList := s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		respond(w, 200, []any{})
 	})
-	for _, path := range []string{"/features", "/movies/recommendations"} {
+	// Coach has no plugins and no notification services: the user menu's plugin
+	// pages and the Notifications settings page list nothing.
+	for _, path := range []string{"/features", "/movies/recommendations", "/web/configurationpages", "/notifications/services/configured", "/notifications/types"} {
 		mux.HandleFunc("GET "+path, emptyList)
 	}
 	// Emby Web strips the "/emby" prefix when it derives the socket address, so

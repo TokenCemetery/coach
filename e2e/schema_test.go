@@ -75,8 +75,9 @@ func TestLoadContract(t *testing.T) {
 		}
 		ids[op.ID] = true
 	}
-	// 526 Emby operations plus getHealthz.
-	if len(c.Operations) != 527 {
-		t.Errorf("operations = %d, want 527", len(c.Operations))
+	// 526 Emby operations, getNotificationsServicesConfigured (missing from the
+	// Emby document, requested by Emby Web) and getHealthz.
+	if len(c.Operations) != 528 {
+		t.Errorf("operations = %d, want 528", len(c.Operations))
 	}
 }

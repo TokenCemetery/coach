@@ -196,3 +196,24 @@ func TestMalformedRequestsAndLimits(t *testing.T) {
 		t.Fatal("missing retry interval")
 	}
 }
+
+// TestSettingsPageLists covers lists Emby Web settings pages request: plugin
+// pages for the user menu and the Notifications page. Coach has neither.
+func TestSettingsPageLists(t *testing.T) {
+	store, h, _ := newTestServer(t)
+	token := login(t, h)
+	user := store.Snapshot().User.ID
+	for _, path := range []string{
+		// Under the API prefix this is an API route, not a static /web file.
+		"/emby/web/configurationpages?PageType=PluginConfiguration&UserId=" + user + "&EnableInUserMenu=true",
+		"/emby/Notifications/Services/Configured?UserId=" + user,
+		"/emby/Notifications/Types?userId=" + user,
+	} {
+		w := request(h, "GET", path, "", "", token)
+		expectStatus(t, w, 200)
+		if strings.TrimSpace(w.Body.String()) != "[]" {
+			t.Fatalf("%s: %s", path, w.Body.String())
+		}
+		expectStatus(t, request(h, "GET", path, "", "", ""), 401)
+	}
+}

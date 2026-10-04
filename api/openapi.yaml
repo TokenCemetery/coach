@@ -49658,6 +49658,48 @@ paths:
       - apikeyauth: []
       - embyauth: []
       x-RequiredAuthentication: Requires authentication as user
+  /Notifications/Services/Configured:
+    summary: Gets the user's configured notifications
+    get:
+      tags:
+      - UserNotificationsService
+      summary: Gets the user's configured notifications
+      description: Requires authentication as user
+      operationId: getNotificationsServicesConfigured
+      parameters:
+      - name: UserId
+        in: query
+        description: User Id
+        required: true
+        style: form
+        explode: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Operation successful. Returning a list of UserNotificationInfo objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserNotificationInfo'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '500':
+          $ref: '#/components/responses/500'
+      security:
+      - apikeyauth: []
+      - embyauth: []
+      x-RequiredAuthentication: Requires authentication as user
+      x-coach-source: Requested by the Emby Web 4.10.0.40 Notifications settings page (settings/notifications.js),
+        which reads the response as a list; the Emby document does not list the path.
   /Notifications/Services/Defaults:
     summary: Gets default notification info
     get:

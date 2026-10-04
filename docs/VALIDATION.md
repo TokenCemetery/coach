@@ -182,14 +182,16 @@ M2 остаётся открытым. Сравнительных замеров 
 
 Найдено и исправлено ([#47](https://github.com/TokenCemetery/coach/issues/47)): `IsSpecialEpisode` (400, строка спецвыпусков сериала), `LiveTv/Programs` (404), `Movies/Recommendations` (404, вкладка «Рекомендации»), `SortBy=IsFolder,Filename` (400, вкладка «Папки» была пустой) и `SortBy=SeriesSortName,ParentIndexNumber,IndexNumber,SortName` (400, избранные эпизоды). После исправления тот же маршрут не дал ни одного ответа от 400; вкладки «Папки» показывают фильм и сериал.
 
+Страницы настроек пользователя ([#48](https://github.com/TokenCemetery/coach/issues/48)): «Отображение» запрашивала `web/configurationpages` (404), «Уведомления» — `Notifications/Services/Configured` и затем `Notifications/Types` (404). Теперь все три отвечают пустым списком (200): плагинов и служб уведомлений нет. «Домашний экран», «Воспроизведение» и «Субтитры» ошибок не дали.
+
 Остальные экраны ошибок не дали. Страница `#!/search`, открытая напрямую, осталась пустой; поиск принят ранее через поле в шапке и здесь не перепроверялся.
 
 ## E2E по OpenAPI-контракту (2026-10-04)
 
-Окружение: Go 1.27.1, macOS arm64, FFmpeg 9.0.2, Allure CLI 3.14.3. `make e2e` успешен примерно за 20 секунд. Всего 531 тест: 527 операций `api/openapi.yaml` и 4 поведенческие проверки.
+Окружение: Go 1.27.1, macOS arm64, FFmpeg 9.0.2, Allure CLI 3.14.3. `make e2e` успешен примерно за 20 секунд. Всего 532 теста: 528 операций `api/openapi.yaml` и 4 поведенческие проверки.
 
-- **89 прошли.**
-- **442 отмечены ожидаемыми падениями** в `e2e/known_failures.go`. Почти все они — 404 на нереализованных маршрутах. Кроме них:
+- **92 прошли.**
+- **440 отмечены ожидаемыми падениями** в `e2e/known_failures.go`. Почти все они — 404 на нереализованных маршрутах. Кроме них:
   - 4 административные операции `/Users/Query|Prefixes|ItemAccess|CopyDataOptions` дают 403;
   - 2 поведенческие проверки падают по своим причинам: HLS и WebVTT — 404 (`Resume?IncludeNextUp` проходит с 2026-10-04);
   - первый прогон нашёл 4 реализованные операции, расходящиеся с контрактом ([#44](https://github.com/TokenCemetery/coach/issues/44)): тип `OwnerId` в ThemeMedia, маршрут `SearchedItems/` с завершающим слешем, тела `POST /UserSettings/{id}` и `/Users/{id}/Configuration/Partial`. Во всех четырёх случаях Emby Web 4.10.0.40 (`modules/emby-apiclient/apiclient.js`, `modules/thememediaplayer.js`) ведёт себя как Coach, поэтому исправлен контракт с пометкой `x-coach-source`.
