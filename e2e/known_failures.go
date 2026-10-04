@@ -20,6 +20,7 @@ var (
 	backup               = knownFailure{32, "backup and restore are not implemented"}
 	unranked             = knownFailure{34, "not implemented; not ranked by real usage yet"}
 	partialService       = knownFailure{45, "only part of this service is implemented"}
+	notCalledByWeb       = knownFailure{34, "Emby Web 4.10.0.40 does not call it; use by other clients is not ranked yet"}
 )
 
 // knownFailures lists contract operations (by operationId) and behavior
@@ -209,14 +210,14 @@ var knownFailures = map[string]knownFailure{
 	"getAlbumsByIdSimilar":             partialService,
 	"getArtistsByIdSimilar":            partialService,
 	"getGamesByIdSimilar":              partialService,
-	"getItemsByIdAncestors":            partialService,
-	"getItemsByIdCriticreviews":        partialService,
+	"getItemsByIdAncestors":            notCalledByWeb,
+	"getItemsByIdCriticreviews":        notCalledByWeb,
 	"getItemsByIdDeleteinfo":           partialService,
 	"getItemsByIdDownload":             partialService,
 	"getItemsByIdFile":                 partialService,
 	"getItemsByIdThemesongs":           partialService,
 	"getItemsByIdThemevideos":          partialService,
-	"getItemsCounts":                   partialService,
+	"getItemsCounts":                   notCalledByWeb,
 	"getItemsIntros":                   partialService,
 	"getLibrariesAvailableoptions":     partialService,
 	"getLibraryMediafolders":           partialService,
@@ -373,12 +374,12 @@ var knownFailures = map[string]knownFailure{
 	"postPlaylistsByIdItemsByItemidMoveByNewindex": unranked,
 	"postPlaylistsByIdItemsDelete":                 unranked,
 	// PlaystateService
-	"deleteUsersByUseridPlayingitemsById":       partialService,
-	"postSessionsPlayingPing":                   partialService,
-	"postUsersByUseridItemsByItemidUserdata":    partialService,
-	"postUsersByUseridPlayingitemsById":         partialService,
-	"postUsersByUseridPlayingitemsByIdDelete":   partialService,
-	"postUsersByUseridPlayingitemsByIdProgress": partialService,
+	"deleteUsersByUseridPlayingitemsById":       notCalledByWeb,
+	"postSessionsPlayingPing":                   notCalledByWeb,
+	"postUsersByUseridItemsByItemidUserdata":    notCalledByWeb,
+	"postUsersByUseridPlayingitemsById":         notCalledByWeb,
+	"postUsersByUseridPlayingitemsByIdDelete":   notCalledByWeb,
+	"postUsersByUseridPlayingitemsByIdProgress": notCalledByWeb,
 	// PluginService
 	"deletePluginsById":            administration,
 	"getPlugins":                   administration,
@@ -505,15 +506,15 @@ var knownFailures = map[string]knownFailure{
 	"headAudioByIdUniversal":            transcoding,
 	"headAudioByIdUniversalByContainer": transcoding,
 	// UserLibraryService
-	"deleteUsersByUseridItemsByIdRating":     partialService,
+	"deleteUsersByUseridItemsByIdRating":     notCalledByWeb,
 	"getLivetvProgramsById":                  partialService,
 	"getVideosByIdAdditionalparts":           partialService,
 	"postItemsAccess":                        partialService,
 	"postItemsByIdMakeprivate":               partialService,
 	"postItemsByIdMakepublic":                partialService,
 	"postItemsSharedLeave":                   partialService,
-	"postUsersByUseridItemsByIdRating":       partialService,
-	"postUsersByUseridItemsByIdRatingDelete": partialService,
+	"postUsersByUseridItemsByIdRating":       notCalledByWeb,
+	"postUsersByUseridItemsByIdRatingDelete": notCalledByWeb,
 	// UserNotificationsService
 	"getNotificationsServicesDefaults": administration,
 	"postNotificationsServicesTest":    administration,
