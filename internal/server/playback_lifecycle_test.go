@@ -82,3 +82,24 @@ func TestPlaybackRetryWindowBounded(t *testing.T) {
 		t.Fatal("foreign/stale report accepted")
 	}
 }
+
+// TestPlayReportProblems names the rule that drops a report, which the server
+// logs while still answering 204 (issue 49).
+func TestPlayReportProblems(t *testing.T) {
+	var session state.Session
+	for _, tc := range []struct{ item, play, event, problem string }{
+		{"movie", "", "progress", ""},
+		{"movie", "a", "start", ""},
+		{"movie", "a", "start", "repeated start"},
+		{"movie", "missing", "progress", "unknown play session"},
+		{"other", "a", "progress", "play session belongs to another item"},
+		{"movie", "b", "start", ""},
+		{"movie", "a", "stop", "not the newest play session"},
+		{"movie", "b", "stop", ""},
+		{"movie", "b", "progress", "play session already stopped"},
+	} {
+		if got := playReportProblem(&session, tc.item, tc.play, tc.event); got != tc.problem {
+			t.Fatalf("%s %s %s: got %q, want %q", tc.item, tc.play, tc.event, got, tc.problem)
+		}
+	}
+}

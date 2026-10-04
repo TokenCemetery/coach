@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log/slog"
 	"math"
 	"mime"
 	"net/http"
@@ -222,8 +223,9 @@ func (s *Server) reportPlaystate(event string) authenticated {
 		if item.RunTimeTicks > 0 {
 			position = min(position, item.RunTimeTicks)
 		}
+		problem := ""
 		_, err := s.updateItemSession(token, item, func(st *state.ItemState, current *state.Session) {
-			if !acceptPlayReport(current, item.ID, body.PlaySessionId, event) {
+			if problem = playReportProblem(current, item.ID, body.PlaySessionId, event); problem != "" {
 				return
 			}
 			if hasPosition {
@@ -242,6 +244,14 @@ func (s *Server) reportPlaystate(event string) authenticated {
 				}
 			}
 		})
+		// The client is still answered 204: a duplicate or late report is
+		// normal after retries. The log lets a lost position be diagnosed.
+		if err == nil && problem != "" {
+			slog.Warn("Playback report ignored", "event", event, "reason", problem, "item", item.ID)
+		}
+		if err == nil && problem == "" && event == "stop" && !hasPosition {
+			slog.Info("Playback stopped without a position", "item", item.ID)
+		}
 		s.changed(w, err)
 	}
 }
@@ -250,31 +260,43 @@ func (s *Server) reportPlaystate(event string) authenticated {
 // Only the newest start accepts progress/stop; a completed play cannot reopen.
 // Legacy reports without an ID retain arrival-order semantics.
 func acceptPlayReport(session *state.Session, itemID, playID, event string) bool {
+	return playReportProblem(session, itemID, playID, event) == ""
+}
+
+// playReportProblem applies acceptPlayReport's rules and names the rule that
+// rejects a report, or returns "" when the report is accepted.
+func playReportProblem(session *state.Session, itemID, playID, event string) string {
 	if playID == "" {
-		return true
+		return ""
 	}
 	index := slices.IndexFunc(session.RecentPlays, func(p state.PlaybackRecord) bool { return p.ID == playID })
 	if event == "start" {
 		if index >= 0 {
-			return false
+			return "repeated start"
 		}
 		if len(session.RecentPlays) >= 64 {
 			session.RecentPlays = slices.Clone(session.RecentPlays[len(session.RecentPlays)-63:])
 		}
 		session.RecentPlays = append(session.RecentPlays, state.PlaybackRecord{ID: playID, ItemID: itemID})
-		return true
+		return ""
 	}
-	if index < 0 || index != len(session.RecentPlays)-1 {
-		return false
+	switch {
+	case index < 0:
+		return "unknown play session"
+	case index != len(session.RecentPlays)-1:
+		return "not the newest play session"
 	}
 	play := &session.RecentPlays[index]
-	if play.Stopped || play.ItemID != itemID {
-		return false
+	switch {
+	case play.Stopped:
+		return "play session already stopped"
+	case play.ItemID != itemID:
+		return "play session belongs to another item"
 	}
 	if event == "stop" {
 		play.Stopped = true
 	}
-	return true
+	return ""
 }
 
 // setItemFlag backs the played and favourite toggles, which answer with the
