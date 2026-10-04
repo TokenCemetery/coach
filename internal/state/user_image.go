@@ -19,12 +19,15 @@ func (s *Store) userImagePath(revision string) string {
 }
 
 // SetUserImage stores an already validated avatar. The file is written and
-// synced before the state refers to it; the replaced file is removed after.
+// synced before the state refers to it. Afterwards, whether or not the change
+// was committed, only files the committed state no longer references are
+// removed.
 func (s *Store) SetUserImage(token string, content []byte, mime string) error {
+	s.imageMu.Lock()
+	defer s.imageMu.Unlock()
 	sum := sha256.Sum256(content)
 	image := UserImage{Revision: hex.EncodeToString(sum[:16]), MIME: mime}
-	name := s.userImagePath(image.Revision)
-	if err := writeFileSynced(name, content); err != nil {
+	if err := writeFileSynced(s.userImagePath(image.Revision), content); err != nil {
 		return err
 	}
 	var previous *UserImage
@@ -32,31 +35,34 @@ func (s *Store) SetUserImage(token string, content []byte, mime string) error {
 		previous = d.User.Image
 		d.User.Image = &image
 	})
-	if err != nil {
-		if previous == nil || previous.Revision != image.Revision {
-			_ = os.Remove(name)
-		}
-		return err
-	}
-	if previous != nil && previous.Revision != image.Revision {
-		_ = os.Remove(s.userImagePath(previous.Revision))
-	}
-	return nil
+	s.removeUnreferencedImages(previous, &image)
+	return err
 }
 
 // DeleteUserImage removes the avatar. Deleting a missing avatar succeeds.
 func (s *Store) DeleteUserImage(token string) error {
+	s.imageMu.Lock()
+	defer s.imageMu.Unlock()
 	var previous *UserImage
-	if err := s.Change(token, func(d *Data, _ *Session) {
+	err := s.Change(token, func(d *Data, _ *Session) {
 		previous = d.User.Image
 		d.User.Image = nil
-	}); err != nil {
-		return err
+	})
+	s.removeUnreferencedImages(previous)
+	return err
+}
+
+// removeUnreferencedImages deletes the files of the given avatars unless the
+// committed state still references them. Callers hold imageMu.
+func (s *Store) removeUnreferencedImages(images ...*UserImage) {
+	s.mu.RLock()
+	current := s.data.User.Image
+	s.mu.RUnlock()
+	for _, image := range images {
+		if image != nil && (current == nil || current.Revision != image.Revision) {
+			_ = os.Remove(s.userImagePath(image.Revision))
+		}
 	}
-	if previous != nil {
-		_ = os.Remove(s.userImagePath(previous.Revision))
-	}
-	return nil
 }
 
 // OpenUserImage opens the current avatar file.

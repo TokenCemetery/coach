@@ -98,6 +98,9 @@ type Store struct {
 	path string
 	lock *os.File
 	data Data
+	// imageMu serializes avatar changes, so a file is removed only once the
+	// committed state no longer references it.
+	imageMu sync.Mutex
 }
 
 func randomID() string {
