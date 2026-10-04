@@ -286,6 +286,9 @@ func (s *Server) Handler() http.Handler {
 	for _, path := range []string{"/shows/upcoming", "/shows/missing", "/livetv/recordings", "/livetv/programs"} {
 		mux.HandleFunc("GET "+path, emptyPage)
 	}
+	mux.HandleFunc("GET /localization/cultures", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+		respond(w, 200, json.RawMessage(culturesJSON))
+	}))
 	emptyList := s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		respond(w, 200, []any{})
 	})

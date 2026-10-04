@@ -308,7 +308,6 @@ var knownFailures = map[string]knownFailure{
 	"putLivetvChannelmappings":              unranked,
 	// LocalizationService
 	"getLocalizationCountries":       administration,
-	"getLocalizationCultures":        administration,
 	"getLocalizationOptions":         administration,
 	"getLocalizationParentalratings": administration,
 	// MediaInfoService

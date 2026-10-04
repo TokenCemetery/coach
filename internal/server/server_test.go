@@ -237,3 +237,21 @@ func TestFailFallsBackToCode(t *testing.T) {
 		t.Fatalf("body = %q", w.Body.String())
 	}
 }
+
+func TestLocalizationCultures(t *testing.T) {
+	_, h, _ := newTestServer(t)
+	token := login(t, h)
+	expectStatus(t, request(h, "GET", "/Localization/Cultures", "", "", ""), 401)
+	w := request(h, "GET", "/emby/Localization/cultures", "", "", token)
+	expectStatus(t, w, 200)
+	var cultures []struct{ DisplayName, TwoLetterISOLanguageName, ThreeLetterISOLanguageName string }
+	if err := json.Unmarshal(w.Body.Bytes(), &cultures); err != nil || len(cultures) != 196 {
+		t.Fatalf("%d cultures, %v", len(cultures), err)
+	}
+	for _, c := range cultures {
+		if c.TwoLetterISOLanguageName == "ru" && c.ThreeLetterISOLanguageName == "rus" && c.DisplayName == "Russian" {
+			return
+		}
+	}
+	t.Fatal("Russian is missing")
+}

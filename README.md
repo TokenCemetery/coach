@@ -100,6 +100,7 @@ API принимает маршруты без префикса и с `/emby/`, 
 | Каталог | Views, Items, ItemTypes для поиска, Items/{id}, Latest, root, Shows/{id}/Seasons и Episodes, Shows/NextUp; фильтры по сохранённым Played/Favorite; история поиска (`POST /Users/{id}/SearchedItems`, `POST /Users/{id}/RecentlySearched/Delete`, `WasSearched`, `SortBy=DateLastSearched`); пагинация Resume |
 | Обложки | GET/HEAD Items/{id}/Images/Primary[/0], подписанные ImageTags или API-токен |
 | Главный экран | HomeSections, Sections/{id}/Items, Resume |
+| Настройки пользователя | `GET /Localization/Cultures` — список языков эталонного Emby 4.10.0.40 (196 записей, снят только для чтения 2026-10-04) для выбора языка субтитров и аудио |
 | Воспроизведение | PlaybackInfo, Videos/{id}/stream.*, Sessions/Playing, /Progress, /Stopped |
 | Состояние просмотра | POST/DELETE PlayedItems и FavoriteItems |
 | WebSocket | `/embywebsocket`: вход по токену, KeepAlive, ping/pong, UserDataChanged |
