@@ -3,8 +3,12 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestWebAssetsDoNotForwardCredentialsOrAPI(t *testing.T) {
@@ -70,4 +74,58 @@ func TestWebAssetsRejectRedirectsAndInvalidOrigins(t *testing.T) {
 	if targetCalls != 0 || strings.Contains(w.Body.String(), target.URL) {
 		t.Fatal("followed or leaked upstream redirect")
 	}
+}
+
+func TestWebAssetsCapUpstreamFetches(t *testing.T) {
+	var active, peak atomic.Int64
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/web/huge.js" {
+			w.Header().Set("Content-Length", strconv.Itoa(maxUpstreamAsset+1))
+			return
+		}
+		n := active.Add(1)
+		defer active.Add(-1)
+		for {
+			old := peak.Load()
+			if n <= old || peak.CompareAndSwap(old, n) {
+				break
+			}
+		}
+		<-release
+		_, _ = w.Write([]byte("asset"))
+	}))
+	defer upstream.Close()
+	defer releaseAll() // runs before Close, so a failed check cannot hang it
+	proxy, err := WebAssets(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Twice the cap arrives at once: the extra half waits, none fails.
+	var wg sync.WaitGroup
+	codes := make(chan int, 2*maxUpstreamFetches)
+	for range 2 * maxUpstreamFetches {
+		wg.Go(func() { codes <- request(proxy, "GET", "/web/slow.js", "", "", "").Code })
+	}
+	for active.Load() < maxUpstreamFetches {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if got := active.Load(); got != maxUpstreamFetches {
+		t.Fatalf("%d concurrent upstream fetches, want %d", got, maxUpstreamFetches)
+	}
+	releaseAll()
+	wg.Wait()
+	close(codes)
+	for code := range codes {
+		if code != 200 {
+			t.Fatalf("queued request: status %d", code)
+		}
+	}
+	if peak.Load() > maxUpstreamFetches {
+		t.Fatalf("peak %d concurrent fetches", peak.Load())
+	}
+	expectStatus(t, request(proxy, "GET", "/web/huge.js", "", "", ""), 502)
 }

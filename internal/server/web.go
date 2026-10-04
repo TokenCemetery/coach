@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+const (
+	maxUpstreamFetches = 16
+	upstreamSlotWait   = 10 * time.Second
+	maxUpstreamAsset   = 32 << 20
+)
+
 // WebAssets serves a user-supplied Emby installation's static files. API calls
 // never pass through this handler. The client uses Coach's same-origin API.
 func WebAssets(origin string) (http.Handler, error) {
@@ -20,6 +26,11 @@ func WebAssets(origin string) (http.Handler, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
 	client := &http.Client{Transport: transport, Timeout: 20 * time.Second, CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	// Anonymous requests must not multiply load on the upstream Emby without
+	// bound. Emby Web loads a few hundred files at start, so a request waits
+	// briefly for a slot instead of failing at once: a refused script stops
+	// the client.
+	slots := make(chan struct{}, maxUpstreamFetches)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
@@ -48,6 +59,19 @@ func WebAssets(origin string) (http.Handler, error) {
 			fail(w, 502, "AssetUnavailable")
 			return
 		}
+		wait := time.NewTimer(upstreamSlotWait)
+		select {
+		case slots <- struct{}{}:
+			wait.Stop()
+			defer func() { <-slots }()
+		case <-wait.C:
+			w.Header().Set("Retry-After", "5")
+			fail(w, 503, "TooManyConnections")
+			return
+		case <-r.Context().Done():
+			wait.Stop()
+			return
+		}
 		res, err := client.Do(req) //nolint:gosec // host is the operator-configured upstream; only validated asset paths and "v" are forwarded
 		if err != nil {
 			fail(w, 502, "AssetUnavailable")
@@ -62,6 +86,10 @@ func WebAssets(origin string) (http.Handler, error) {
 			}
 			return
 		}
+		if res.ContentLength > maxUpstreamAsset {
+			fail(w, 502, "AssetUnavailable")
+			return
+		}
 		for _, key := range []string{"Content-Type", "Content-Length", "ETag", "Last-Modified"} {
 			if v := res.Header.Get(key); v != "" {
 				w.Header().Set(key, v)
@@ -69,7 +97,9 @@ func WebAssets(origin string) (http.Handler, error) {
 		}
 		w.WriteHeader(http.StatusOK)
 		if r.Method != http.MethodHead {
-			_, _ = io.Copy(w, res.Body)
+			// Without Content-Length the body is cut at the cap; the client
+			// then sees a truncated asset instead of an unbounded transfer.
+			_, _ = io.Copy(w, io.LimitReader(res.Body, maxUpstreamAsset))
 		}
 	}), nil
 }
