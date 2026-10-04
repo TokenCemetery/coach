@@ -49,7 +49,7 @@ unset coach_password
 
 Сканирование выполняется перед запуском HTTP-сервера и повторяется при рестарте. Без `-media-dir` библиотека остаётся пустой; FFprobe не требуется. Исходные файлы не изменяются. Файлы объединяются в `Movies`, кроме явно распознанных эпизодов.
 
-Структура `Show/Season 01/Show.S01E02.mp4` внутри `-media-dir` создаёт библиотеку `TV Shows`, сериал, сезон и эпизод. Номер сезона в папке и имени должен совпадать; `Season 00` поддерживается. Остальные имена остаются фильмами. ID фильмов не меняются; ID сериалов/сезонов стабильны при неизменном пути. Поддержаны карточки, поиск, Seasons/Episodes, прямая выдача эпизодов; «Воспроизвести» на сериале проигрывает эпизоды по порядку в очереди клиента. Next Up, альтернативные схемы имён и онлайн-метаданные не реализованы.
+Структура `Show/Season 01/Show.S01E02.mp4` внутри `-media-dir` создаёт библиотеку `TV Shows`, сериал, сезон и эпизод. Номер сезона в папке и имени должен совпадать; `Season 00` поддерживается. Остальные имена остаются фильмами. ID фильмов не меняются; ID сериалов/сезонов стабильны при неизменном пути. Поддержаны карточки, поиск, Seasons/Episodes, прямая выдача эпизодов; «Воспроизвести» на сериале проигрывает эпизоды по порядку в очереди клиента. `Shows/NextUp` для каждого начатого сериала возвращает эпизод после самого дальнего просмотренного; сериалы упорядочены по последнему просмотру, спецвыпуски `Season 00` не учитываются. Next Up в Continue Watching (`IncludeNextUp`), альтернативные схемы имён и онлайн-метаданные не реализованы.
 
 - Расширения: mp4, m4v, mkv, webm, avi, mov, mpg, mpeg, ts, m2ts, wmv, ogv. Нужна обнаруженная видеодорожка; битые файлы пропускаются и учитываются в журнале счётчиком без путей.
 - Название берётся из имени файла; FFprobe даёт длительность, кодеки, размеры кадра, аудио- и субтитровые дорожки. NFO и внешние провайдеры пока отсутствуют.
@@ -93,13 +93,13 @@ API принимает маршруты без префикса и с `/emby/`, 
 | Сессия | `GET /System/Info`, `GET /Users/{id}`, `GET /Users/Me`, `GET /Sessions`, `POST /Sessions/Logout` |
 | Возможности клиента | `POST /Sessions/Capabilities/Full` |
 | Настройки | `GET/POST /usersettings/{id}`, `POST /usersettings/{id}/Partial`, пользовательская Configuration |
-| Каталог | Views, Items, ItemTypes для поиска, Items/{id}, Latest, root, Shows/{id}/Seasons и Episodes; фильтры по сохранённым Played/Favorite; пагинация Resume |
+| Каталог | Views, Items, ItemTypes для поиска, Items/{id}, Latest, root, Shows/{id}/Seasons и Episodes, Shows/NextUp; фильтры по сохранённым Played/Favorite; пагинация Resume |
 | Обложки | GET/HEAD Items/{id}/Images/Primary[/0], подписанные ImageTags или API-токен |
 | Главный экран | HomeSections, Sections/{id}/Items, Resume |
 | Воспроизведение | PlaybackInfo, Videos/{id}/stream.*, Sessions/Playing, /Progress, /Stopped |
 | Состояние просмотра | POST/DELETE PlayedItems и FavoriteItems |
 | WebSocket | `/embywebsocket`: вход по токену, KeepAlive, ping/pong, UserDataChanged |
-| Пока пустые результаты | NextUp, Upcoming, Live TV recordings |
+| Пока пустые результаты | Upcoming, Live TV recordings |
 
 Поддерживаются токены в заголовках, query `X-Emby-Token`/`api_key`, а также `Authorization: Emby …` и `MediaBrowser …`. Конфликтующие токены отклоняются. JSON, отправляемый клиентом как `text/plain` с `reqformat=json`, поддержан. Неизвестные маршруты возвращают 404.
 

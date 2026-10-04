@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/TokenCemetery/coach/internal/media"
+	"github.com/TokenCemetery/coach/internal/state"
 )
 
 func TestSeriesCatalog(t *testing.T) {
@@ -76,4 +78,65 @@ func TestSeriesCatalog(t *testing.T) {
 	if episode["Type"] != "Episode" || episode["SeasonId"] != "season" || episode["SeriesId"] != "show" || episode["IndexNumber"] != float64(1) {
 		t.Fatal("episode DTO")
 	}
+}
+
+func TestNextUp(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	catalog := &media.Catalog{ID: "movies"}
+	episode := func(id, series string, season, number int) media.Item {
+		return media.Item{ID: id, Name: id, Kind: "Episode", ParentID: series + "-s", SeasonID: series + "-s", SeriesID: series, SeriesName: series, SeasonNumber: season, EpisodeNumber: number, RunTimeTicks: 100000000}
+	}
+	catalog.Items = []media.Item{
+		{ID: "movie", Name: "Movie"},
+		episode("a2", "a", 1, 2), episode("a1", "a", 1, 1), episode("a0", "a", 0, 1),
+		episode("b1", "b", 1, 1), episode("b2", "b", 1, 2), episode("b3", "b", 2, 1),
+		episode("c1", "c", 1, 1), episode("c2", "c", 1, 2),
+		episode("d1", "d", 1, 1),
+	}
+	h := New(store, "test", nil, catalog).Handler()
+	token := login(t, h)
+	now := time.Now()
+	// a: first episode watched earlier; b: an episode skipped, then the second watched
+	// most recently; c: never finished; d: finished with nothing after it.
+	if err := store.Change(token, func(d *state.Data, _ *state.Session) {
+		d.User.Items = map[string]state.ItemState{
+			"a1": {Played: true, LastPlayed: now.Add(-time.Hour)},
+			"a0": {Played: true, LastPlayed: now},
+			"b2": {Played: true, LastPlayed: now.Add(-time.Minute)},
+			"c1": {PositionTicks: 50000000, LastPlayed: now},
+			"d1": {Played: true, LastPlayed: now},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	user := store.Snapshot().User.ID
+	for _, tc := range []struct{ path, ids string }{
+		// a0 is a special and is ignored, so b was watched more recently than a.
+		{"/Shows/NextUp?UserId=" + user + "&LegacyNextUp=true&Fields=PrimaryImageAspectRatio&ImageTypeLimit=1", "b3,a2"},
+		{"/Shows/NextUp?SeriesId=b", "b3"},
+		{"/Shows/NextUp?ParentId=a", "a2"},
+		{"/Shows/NextUp?ParentId=" + catalog.SeriesLibraryID() + "&StartIndex=1&Limit=1", "a2"},
+		{"/Shows/NextUp?ParentId=movies", ""},
+	} {
+		w := request(h, "GET", tc.path, "", "", token)
+		expectStatus(t, w, 200)
+		var page struct {
+			Items            []struct{ Id string }
+			TotalRecordCount int
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		ids := []string{}
+		for _, item := range page.Items {
+			ids = append(ids, item.Id)
+		}
+		if strings.Join(ids, ",") != tc.ids {
+			t.Fatalf("%s: %v", tc.path, ids)
+		}
+	}
+	expectStatus(t, request(h, "GET", "/Shows/NextUp", "", "", ""), 401)
+	expectStatus(t, request(h, "GET", "/Shows/NextUp?Limit=-1", "", "", token), 400)
+	expectStatus(t, request(h, "GET", "/Shows/NextUp?SortBy=Name", "", "", token), 400)
+	expectStatus(t, request(h, "GET", "/Shows/NextUp?UserId=other", "", "", token), 403)
 }

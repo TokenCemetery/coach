@@ -227,7 +227,7 @@ func (s *Server) Handler() http.Handler {
 	emptyPage := s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		respond(w, 200, object{"Items": []any{}, "TotalRecordCount": 0})
 	})
-	for _, path := range []string{"/shows/nextup", "/shows/upcoming", "/livetv/recordings"} {
+	for _, path := range []string{"/shows/upcoming", "/livetv/recordings"} {
 		mux.HandleFunc("GET "+path, emptyPage)
 	}
 	emptyList := s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
