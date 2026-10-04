@@ -1,8 +1,12 @@
 package e2e
 
 import (
+	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -46,6 +50,16 @@ func TestSoak(t *testing.T) {
 	for w := range workers {
 		wg.Go(func() {
 			for i := 0; ctx.Err() == nil; i++ {
+				// Every fifth round reconnects the WebSocket, alternately
+				// closing it cleanly and dropping the connection.
+				if i%5 == 0 {
+					err := reconnectSocket(inst, i%10 == 0)
+					requests.Add(1)
+					if err != nil && ctx.Err() == nil {
+						failures.Add(1)
+						t.Logf("websocket: %v", err)
+					}
+				}
 				for _, r := range soakRequests(inst, w, i) {
 					resp, err := inst.Send(r, true)
 					requests.Add(1)
@@ -93,6 +107,50 @@ func TestSoak(t *testing.T) {
 	if extra := listFiles(inst.data); !slices.Equal(extra, dataFiles) {
 		t.Errorf("data directory changed from %v to %v", dataFiles, extra)
 	}
+}
+
+// reconnectSocket opens /embywebsocket like Emby Web, waits for the server's
+// first message and then closes with a close frame or by dropping the TCP
+// connection, which is what a closed browser tab does.
+func reconnectSocket(inst *Instance, clean bool) error {
+	address := strings.TrimPrefix(inst.URL, "http://")
+	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(context.Background(), "tcp", address)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return err
+	}
+	key := make([]byte, 16)
+	_, _ = rand.Read(key)
+	query := url.Values{"api_key": {inst.Token}, "deviceId": {"soak-socket"}}
+	request := "GET /embywebsocket?" + query.Encode() + " HTTP/1.1\r\nHost: " + address +
+		"\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: " +
+		base64.StdEncoding.EncodeToString(key) + "\r\n\r\n"
+	if _, err := conn.Write([]byte(request)); err != nil {
+		return err
+	}
+	reader := bufio.NewReader(conn)
+	status, err := reader.ReadString('\n')
+	if err != nil || !strings.Contains(status, " 101 ") {
+		return fmt.Errorf("handshake: %q, %w", strings.TrimSpace(status), err)
+	}
+	for line := ""; line != "\r\n"; {
+		if line, err = reader.ReadString('\n'); err != nil {
+			return err
+		}
+	}
+	// The first frame is ForceKeepAlive; reading its header proves the socket
+	// is served, not just upgraded.
+	if _, err := reader.Peek(2); err != nil {
+		return fmt.Errorf("first frame: %w", err)
+	}
+	if clean {
+		// A masked close frame without payload, as RFC 6455 requires of clients.
+		_, err = conn.Write([]byte{0x88, 0x80, 0, 0, 0, 0})
+	}
+	return err
 }
 
 // soakRequests is one iteration of a client browsing and watching: catalog,
