@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ozontech/allure-go/pkg/framework/provider"
 	"github.com/ozontech/allure-go/pkg/framework/runner"
@@ -137,6 +138,53 @@ var behaviors = []behavior{
 			}
 			if !slices.Contains(ids, second) {
 				check.Errorf("resume items %v do not include S01E02 %s", ids, second)
+			}
+		},
+	},
+	{
+		Key:     "forced-stop-keeps-confirmed-state",
+		Title:   "SIGKILL during playback reports keeps every confirmed position",
+		Feature: "PlaystateService",
+		Run: func(inst *Instance, check *Check) {
+			report := func(path string, position int) (int, error) {
+				body := `{"ItemId":"` + inst.IDs.MovieID + `","PositionTicks":` + strconv.Itoa(position) + `}`
+				resp, err := inst.Send(Request{Method: "POST", Path: path, Body: []byte(body), ContentType: "application/json"}, true)
+				return resp.Status, err
+			}
+			if status, err := report("/Sessions/Playing", 0); err != nil || status != 204 {
+				check.Errorf("start: status %d, err %v", status, err)
+				return
+			}
+			// Reports arrive back to back; the kill lands while one is being
+			// written. Positions only grow, so the stored one must be at least
+			// the last confirmed and at most the last sent.
+			confirmed, sent := 0, 0
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				for position := 1; ; position++ {
+					sent = position
+					if status, err := report("/Sessions/Playing/Progress", position); err != nil || status != 204 {
+						return
+					}
+					confirmed = position
+				}
+			}()
+			time.Sleep(300 * time.Millisecond)
+			if err := inst.KillAndRestart(); err != nil {
+				check.Errorf("restart after SIGKILL: %v", err)
+				return
+			}
+			<-done
+			var item struct {
+				UserData struct{ PlaybackPositionTicks int }
+			}
+			if err := inst.Get("/emby/Users/"+inst.IDs.UserID+"/Items/"+inst.IDs.MovieID, &item); err != nil {
+				check.Errorf("item after restart: %v", err)
+				return
+			}
+			if got := item.UserData.PlaybackPositionTicks; confirmed == 0 || got < confirmed || got > sent {
+				check.Errorf("position after restart %d, want between last confirmed %d and last sent %d", got, confirmed, sent)
 			}
 		},
 	},

@@ -57,6 +57,7 @@ type Instance struct {
 	IDs   Fixtures
 
 	cmd    *exec.Cmd
+	args   []string
 	stderr *bytes.Buffer
 	data   string
 }
@@ -103,7 +104,8 @@ func (s *Suite) Start() (*Instance, error) {
 		return nil, err
 	}
 	inst := &Instance{URL: "http://127.0.0.1:" + port, stderr: &bytes.Buffer{}, data: data}
-	inst.cmd = exec.CommandContext(context.Background(), s.Binary, "-listen", "127.0.0.1:"+port, "-data", data, "-media-dir", s.Media) //nolint:gosec // see NewSuite
+	inst.args = []string{s.Binary, "-listen", "127.0.0.1:" + port, "-data", data, "-media-dir", s.Media}
+	inst.cmd = exec.CommandContext(context.Background(), inst.args[0], inst.args[1:]...) //nolint:gosec // see NewSuite
 	inst.cmd.Stderr = inst.stderr
 	if err := inst.cmd.Start(); err != nil {
 		_ = os.RemoveAll(data)
@@ -126,6 +128,22 @@ func (s *Suite) Start() (*Instance, error) {
 		return nil, fmt.Errorf("%w\n%s", err, inst.stderr)
 	}
 	return inst, nil
+}
+
+// KillAndRestart stops the process with SIGKILL, as a power cut or OOM kill
+// would, and starts it again on the same state, address and media.
+func (inst *Instance) KillAndRestart() error {
+	_ = inst.cmd.Process.Kill()
+	_ = inst.cmd.Wait()
+	inst.cmd = exec.CommandContext(context.Background(), inst.args[0], inst.args[1:]...) //nolint:gosec // see NewSuite
+	inst.cmd.Stderr = inst.stderr
+	if err := inst.cmd.Start(); err != nil {
+		return err
+	}
+	if err := inst.waitReady(); err != nil {
+		return fmt.Errorf("%w\n%s", err, inst.stderr)
+	}
+	return nil
 }
 
 // Stop terminates the process and removes its state.
