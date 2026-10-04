@@ -79,3 +79,45 @@ func TestCatalogSavedStateFilters(t *testing.T) {
 	}
 	expectStatus(t, request(h, "GET", base+"/Items/Resume?Limit=-1", "", "", token), 400)
 }
+
+func TestHideFromResume(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	catalog := &media.Catalog{ID: "movies", Items: []media.Item{{ID: "a", Name: "Alpha", RunTimeTicks: 100000000}}}
+	h := New(store, "test", nil, catalog).Handler()
+	token := login(t, h)
+	base := "/Users/" + store.Snapshot().User.ID
+	expectStatus(t, request(h, "POST", "/Sessions/Playing/Stopped", "application/json", `{"ItemId":"a","PositionTicks":50000000}`, token), 204)
+	expectStatus(t, request(h, "POST", base+"/FavoriteItems/a", "", "", token), 200)
+	resume := func() int {
+		w := request(h, "GET", base+"/Items/Resume", "", "", token)
+		expectStatus(t, w, 200)
+		var result struct{ TotalRecordCount int }
+		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		return result.TotalRecordCount
+	}
+	if resume() != 1 {
+		t.Fatal("item with progress is not resumable")
+	}
+	for _, query := range []string{"", "?Hide=maybe", "?Hide=true&hide=false"} {
+		expectStatus(t, request(h, "POST", base+"/Items/a/HideFromResume"+query, "", "", token), 400)
+	}
+	expectStatus(t, request(h, "POST", base+"/Items/missing/HideFromResume?Hide=true", "", "", token), 404)
+	expectStatus(t, request(h, "POST", base+"/Items/a/HideFromResume?Hide=false", "", "", token), 200)
+	if resume() != 1 {
+		t.Fatal("Hide=false removed the item from resume")
+	}
+	w := request(h, "POST", base+"/Items/a/HideFromResume?Hide=true", "", "", token)
+	expectStatus(t, w, 200)
+	var data struct {
+		PlaybackPositionTicks int64
+		IsFavorite            bool
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &data); err != nil || data.PlaybackPositionTicks != 0 || !data.IsFavorite {
+		t.Fatal("unexpected user data", w.Body.String())
+	}
+	if resume() != 0 {
+		t.Fatal("hidden item is still resumable")
+	}
+}

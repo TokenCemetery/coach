@@ -287,6 +287,32 @@ func (s *Server) setItemFlag(favorite, value bool) authenticated {
 	}
 }
 
+// hideFromResume serves "Remove from Continue Watching". Resume lists items
+// by stored position, so hiding clears it; Hide=false has nothing to restore.
+func (s *Server) hideFromResume(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	var hide *bool
+	if err != nil || playbackQuery(query, "Hide", &hide, strconv.ParseBool) != nil || hide == nil {
+		fail(w, 400, "InvalidRequest")
+		return
+	}
+	item, found := s.findItem(r.PathValue("item"))
+	if !found {
+		fail(w, 404, "NotFound")
+		return
+	}
+	data, err := s.updateItem(token, item, func(st *state.ItemState) {
+		if *hide {
+			st.PositionTicks = 0
+		}
+	})
+	if err != nil {
+		s.changed(w, err)
+		return
+	}
+	respond(w, 200, data)
+}
+
 // resumeItems lists items with meaningful stored progress, most recent first.
 func (s *Server) resumeItems(limit int, token string) []object {
 	snapshot := s.store.Snapshot()
@@ -328,6 +354,7 @@ func (s *Server) playbackRoutes(mux *http.ServeMux) {
 		// Emby Web clears the flag with POST .../Delete instead of DELETE.
 		mux.HandleFunc("POST "+path+"/delete", s.protect(s.setItemFlag(favorite, false)))
 	}
+	mux.HandleFunc("POST /users/{user}/items/{item}/hidefromresume", s.protect(s.hideFromResume))
 	mux.HandleFunc("GET /users/{user}/items/resume", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		s.listItems(w, r, false, true)
 	}))
