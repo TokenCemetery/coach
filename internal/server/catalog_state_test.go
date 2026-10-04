@@ -19,6 +19,16 @@ func TestCatalogSavedStateFilters(t *testing.T) {
 	for _, endpoint := range []string{"/PlayedItems/a", "/FavoriteItems/a"} {
 		expectStatus(t, request(h, "POST", base+endpoint, "", "", token), 200)
 	}
+	// Emby records the play date when an item is marked played; unmarking keeps it.
+	marked := store.Snapshot().User.Items["a"].LastPlayed
+	if marked.IsZero() || !store.Snapshot().User.Items["b"].LastPlayed.IsZero() {
+		t.Fatal("marking played did not record LastPlayed")
+	}
+	expectStatus(t, request(h, "DELETE", base+"/PlayedItems/a", "", "", token), 200)
+	if !store.Snapshot().User.Items["a"].LastPlayed.Equal(marked) {
+		t.Fatal("unmarking changed LastPlayed")
+	}
+	expectStatus(t, request(h, "POST", base+"/PlayedItems/a", "", "", token), 200)
 	for _, tc := range []struct{ query, id string }{
 		{"IsPlayed=true", "a"}, {"IsPlayed=false", "b"},
 		{"IsFavorite=true", "a"}, {"IsFavorite=false", "b"},

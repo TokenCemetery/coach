@@ -273,6 +273,7 @@ func (s *Server) setItemFlag(favorite, value bool) authenticated {
 			st.Played = value
 			if value {
 				st.PositionTicks = 0
+				st.LastPlayed = time.Now().UTC()
 				if st.PlayCount == 0 {
 					st.PlayCount = 1
 				}
