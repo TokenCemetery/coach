@@ -30,10 +30,27 @@ func (s *Server) seriesRoutes(mux *http.ServeMux) {
 				parent = id
 			}
 			q := r.URL.Query()
+			excluded := query["excludeitemids"]
+			if special, exists := query["isspecialseason"]; exists && kind == "Season" {
+				special = strings.ToLower(special)
+				if special != "true" && special != "false" {
+					fail(w, 400, "InvalidQuery")
+					return
+				}
+				// Season 00 holds specials; exclude seasons on the other side of the filter.
+				for _, folder := range s.media.Folders {
+					if folder.Type() == "Season" && folder.SeriesID == series.ID && (folder.SeasonNumber == 0) != (special == "true") {
+						excluded += "," + folder.ID
+					}
+				}
+			}
 			for key := range q {
-				if member("parentid,recursive,includeitemtypes,seasonid", key) {
+				if member("parentid,recursive,includeitemtypes,seasonid,excludeitemids", key) || (kind == "Season" && strings.EqualFold(key, "isspecialseason")) {
 					q.Del(key)
 				}
+			}
+			if excluded = strings.Trim(excluded, ","); excluded != "" {
+				q.Set("ExcludeItemIds", excluded)
 			}
 			q.Set("ParentId", parent)
 			q.Set("Recursive", "true")

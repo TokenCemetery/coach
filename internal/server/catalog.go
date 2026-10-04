@@ -137,7 +137,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 		case "parentid", "recursive", "searchterm", "includeitemtypes", "excludeitemtypes", "mediatypes", "ids", "excludeitemids",
 			"startindex", "limit", "sortby", "sortorder", "isfolder", "isplayed", "isfavorite", "filters",
 			"fields", "enableimages", "enableimagetypes", "imagetypelimit", "enableuserdata", "enabletotalrecordcount", "groupitems",
-			"groupprogramsbyseries", "includesearchtypes",
+			"groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "excludelocationtypes",
 			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids":
 		default:
 			if !strings.HasPrefix(key, "x-emby-") {
@@ -146,7 +146,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			}
 		}
 	}
-	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite", "groupprogramsbyseries", "includesearchtypes"} {
+	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite", "groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems"} {
 		query[key] = strings.ToLower(query[key])
 		if v := query[key]; v != "" && v != "true" && v != "false" {
 			fail(w, 400, "InvalidQuery")
@@ -154,8 +154,15 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 		}
 	}
 	for _, filter := range strings.Split(query["filters"], ",") {
-		if filter != "" && !member("IsUnplayed,IsPlayed,IsFavorite", filter) {
+		if filter != "" && !member("IsUnplayed,IsPlayed,IsFavorite,IsFolder,IsNotFolder", filter) {
 			fail(w, 400, "UnsupportedFilter")
+			return
+		}
+	}
+	// Every catalogued item is a file on disk, so excluding the other location types is a no-op.
+	for _, location := range strings.Split(query["excludelocationtypes"], ",") {
+		if location != "" && !member("Virtual,Offline,Remote", location) {
+			fail(w, 400, "UnsupportedQuery")
 			return
 		}
 	}
@@ -246,7 +253,11 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			(query["isfavorite"] != "" && (query["isfavorite"] == "true") != st.IsFavorite) ||
 			(member(query["filters"], "IsPlayed") && !st.Played) ||
 			(member(query["filters"], "IsUnplayed") && st.Played) ||
-			(member(query["filters"], "IsFavorite") && !st.IsFavorite)
+			(member(query["filters"], "IsFavorite") && !st.IsFavorite) ||
+			(member(query["filters"], "IsFolder") && !folder) ||
+			(member(query["filters"], "IsNotFolder") && folder) ||
+			// Without airing-order metadata, every Season 00 episode is a standalone special.
+			(query["isstandalonespecial"] != "" && (query["isstandalonespecial"] == "true") != (kind == "Episode" && item.SeasonNumber == 0))
 	})
 	if typesOnly {
 		// Search tabs describe the full filtered result, independent of its page.

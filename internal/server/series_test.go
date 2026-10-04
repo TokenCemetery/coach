@@ -14,21 +14,29 @@ func TestSeriesCatalog(t *testing.T) {
 	catalog.Folders = []media.Item{
 		{ID: "show", Name: "Show", Kind: "Series", ParentID: catalog.SeriesLibraryID()},
 		{ID: "season", Name: "Season 1", Kind: "Season", ParentID: "show", SeriesID: "show", SeasonNumber: 1},
+		{ID: "specials", Name: "Specials", Kind: "Season", ParentID: "show", SeriesID: "show"},
 		{ID: "foreign", Name: "Other", Kind: "Season", ParentID: "other", SeriesID: "other"},
 	}
 	catalog.Items = []media.Item{
 		{ID: "movie", Name: "Movie"},
 		{ID: "e2", Name: "Episode Two", Kind: "Episode", ParentID: "season", SeasonID: "season", SeriesID: "show", SeriesName: "Show", SeasonNumber: 1, EpisodeNumber: 2, RunTimeTicks: 100000000},
 		{ID: "e1", Name: "Episode One", Kind: "Episode", ParentID: "season", SeasonID: "season", SeriesID: "show", SeriesName: "Show", SeasonNumber: 1, EpisodeNumber: 1, RunTimeTicks: 100000000},
+		{ID: "sp1", Name: "Special", Kind: "Episode", ParentID: "specials", SeasonID: "specials", SeriesID: "show", SeriesName: "Show", EpisodeNumber: 1, RunTimeTicks: 100000000},
 	}
 	h := New(store, "test", nil, catalog).Handler()
 	token := login(t, h)
 	for _, tc := range []struct{ path, ids string }{
 		{"/Items?ParentId=movies&Recursive=true", "movie"},
 		{"/Items?ParentId=" + catalog.SeriesLibraryID(), "show"},
-		{"/Items?ParentId=show", "season"},
-		{"/Shows/show/Seasons", "season"},
-		{"/Shows/show/Episodes", "e1,e2"},
+		{"/Items?ParentId=show", "season,specials"},
+		{"/Shows/show/Seasons", "specials,season"},
+		{"/Shows/show/Seasons?IsSpecialSeason=false", "season"},
+		{"/Shows/show/Seasons?IsSpecialSeason=true&ExcludeItemIds=other", "specials"},
+		{"/Shows/show/Episodes", "sp1,e1,e2"},
+		// Series playback query sent by Emby Web 4.10.0.40.
+		{"/Items?ParentId=show&Filters=IsNotFolder&Recursive=true&IsStandaloneSpecial=false&ExcludeLocationTypes=Virtual&CollapseBoxSetItems=false&SortBy=ParentIndexNumber,IndexNumber", "e1,e2"},
+		{"/Items?ParentId=show&Filters=IsFolder&Recursive=true&IsStandaloneSpecial=true", ""},
+		{"/Items?ParentId=show&Recursive=true&IsStandaloneSpecial=true", "sp1"},
 		{"/Shows/show/Episodes?SeasonId=season&Limit=1&StartIndex=1", "e2"},
 		{"/Items?Recursive=true&IncludeItemTypes=Episode&SearchTerm=Two", "e2"},
 		{"/Users/" + store.Snapshot().User.ID + "/Sections/latestmedia_movies/Items", "movie"},
@@ -54,6 +62,10 @@ func TestSeriesCatalog(t *testing.T) {
 		expectStatus(t, request(h, "GET", path, "", "", token), 404)
 	}
 	expectStatus(t, request(h, "GET", "/Shows/show/Seasons", "", "", ""), 401)
+	expectStatus(t, request(h, "GET", "/Shows/show/Seasons?IsSpecialSeason=maybe", "", "", token), 400)
+	expectStatus(t, request(h, "GET", "/Shows/show/Episodes?IsSpecialSeason=false", "", "", token), 400)
+	expectStatus(t, request(h, "GET", "/Items?ExcludeLocationTypes=FileSystem", "", "", token), 400)
+	expectStatus(t, request(h, "GET", "/Items?IsStandaloneSpecial=yes", "", "", token), 400)
 	expectStatus(t, request(h, "GET", "/Shows/show/Episodes?UserId=other", "", "", token), 403)
 	expectStatus(t, request(h, "POST", "/Sessions/Playing", "application/json", `{"ItemId":"season"}`, token), 404)
 	w := request(h, "GET", "/Items/e1", "", "", token)
