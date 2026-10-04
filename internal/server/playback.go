@@ -325,6 +325,8 @@ func (s *Server) playbackRoutes(mux *http.ServeMux) {
 		favorite := strings.Contains(path, "favorite")
 		mux.HandleFunc("POST "+path, s.protect(s.setItemFlag(favorite, true)))
 		mux.HandleFunc("DELETE "+path, s.protect(s.setItemFlag(favorite, false)))
+		// Emby Web clears the flag with POST .../Delete instead of DELETE.
+		mux.HandleFunc("POST "+path+"/delete", s.protect(s.setItemFlag(favorite, false)))
 	}
 	mux.HandleFunc("GET /users/{user}/items/resume", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		s.listItems(w, r, false, true)

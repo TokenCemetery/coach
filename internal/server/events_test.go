@@ -74,8 +74,12 @@ func TestUserDataEventsAndSessionLifecycle(t *testing.T) {
 	}{
 		{"POST", "/Users/" + user + "/FavoriteItems/movie", "", "IsFavorite", true, 200},
 		{"DELETE", "/Users/" + user + "/FavoriteItems/movie", "", "IsFavorite", false, 200},
+		{"POST", "/Users/" + user + "/FavoriteItems/movie", "", "IsFavorite", true, 200},
+		{"POST", "/Users/" + user + "/FavoriteItems/movie/Delete", "", "IsFavorite", false, 200},
 		{"POST", "/Users/" + user + "/PlayedItems/movie", "", "Played", true, 200},
 		{"DELETE", "/Users/" + user + "/PlayedItems/movie", "", "Played", false, 200},
+		{"POST", "/Users/" + user + "/PlayedItems/movie", "", "Played", true, 200},
+		{"POST", "/Users/" + user + "/PlayedItems/movie/Delete", "", "Played", false, 200},
 		{"POST", "/Sessions/Playing", `{"ItemId":"movie","PositionTicks":1000000}`, "PlaybackPositionTicks", float64(1000000), 204},
 		{"POST", "/Sessions/Playing/Progress", `{"ItemId":"movie","PositionTicks":2500000}`, "PlaybackPositionTicks", float64(2500000), 204},
 		{"POST", "/Sessions/Playing/Stopped", `{"ItemId":"movie","PositionTicks":10000000}`, "Played", true, 204},
