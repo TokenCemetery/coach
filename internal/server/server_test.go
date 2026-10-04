@@ -217,3 +217,23 @@ func TestSettingsPageLists(t *testing.T) {
 		expectStatus(t, request(h, "GET", path, "", "", ""), 401)
 	}
 }
+
+func TestErrorsArePlainText(t *testing.T) {
+	_, h, _ := newTestServer(t)
+	response := request(h, "GET", "/Users/Me", "", "", "")
+	expectStatus(t, response, 401)
+	if got := response.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if got := response.Body.String(); got != "Access token is invalid or expired." {
+		t.Fatalf("body = %q", got)
+	}
+}
+
+func TestFailFallsBackToCode(t *testing.T) {
+	w := httptest.NewRecorder()
+	fail(w, 400, "SomethingNew")
+	if w.Body.String() != "SomethingNew" {
+		t.Fatalf("body = %q", w.Body.String())
+	}
+}

@@ -105,7 +105,7 @@ API принимает маршруты без префикса и с `/emby/`, 
 | WebSocket | `/embywebsocket`: вход по токену, KeepAlive, ping/pong, UserDataChanged |
 | Пока пустые результаты | Upcoming, Live TV recordings; Items с `MinPremiereDate` или `IsUnaired=true` (дат премьер нет) |
 
-Поддерживаются токены в заголовках, query `X-Emby-Token`/`api_key`, а также `Authorization: Emby …` и `MediaBrowser …`. Конфликтующие токены отклоняются. JSON, отправляемый клиентом как `text/plain` с `reqformat=json`, поддержан. Неизвестные маршруты возвращают 404.
+Поддерживаются токены в заголовках, query `X-Emby-Token`/`api_key`, а также `Authorization: Emby …` и `MediaBrowser …`. Конфликтующие токены отклоняются. JSON, отправляемый клиентом как `text/plain` с `reqformat=json`, поддержан. Неизвестные маршруты возвращают 404. Ошибки, как у эталонного Emby, возвращаются как `text/plain` с понятным сообщением, которое Emby Web показывает в диалоге.
 
 Поле API `Version=4.10.0.40` выбирает соответствующую ветку протокола клиента. Версия Coach — `0.1.0`, видна в `/healthz`, `X-Coach-Version` и авторизованном `/System/Info`. Совпадение номера протокола не означает полную совместимость с Emby.
 

@@ -55,8 +55,48 @@ func failText(w http.ResponseWriter, status int, message string) {
 	_, _ = w.Write([]byte(message))
 }
 
+// errorMessages holds the text for each fail code. Like the reference Emby,
+// errors are plain text, which Emby Web shows in its dialog as is.
+var errorMessages = map[string]string{
+	"AssetNotFound":              "The web client file was not found.",
+	"AssetUnavailable":           "The web client is unavailable.",
+	"ImageChanged":               "The image has changed. Reload the page.",
+	"ImageTooLarge":              "The image is too large.",
+	"ImageUnavailable":           "The image is unavailable.",
+	"InvalidAssetPath":           "The web client path is invalid.",
+	"InvalidAudioStreamIndex":    "The selected audio track does not exist.",
+	"InvalidAuthentication":      "The authentication data is invalid.",
+	"InvalidImage":               "The image is invalid.",
+	"InvalidPagination":          "The page range is invalid.",
+	"InvalidQuery":               "The query parameters are invalid.",
+	"InvalidRequest":             "The request is invalid.",
+	"InvalidSubtitleStreamIndex": "The selected subtitle track does not exist.",
+	"MediaSourceNotFound":        "The media source was not found.",
+	"MediaUnavailable":           "The media file is unavailable.",
+	"MethodNotAllowed":           "The method is not allowed.",
+	"NotFound":                   "The requested item was not found.",
+	"SessionLimitReached":        "Too many signed-in sessions. Sign out on another device.",
+	"StateLimitReached":          "The server storage limit is reached.",
+	"StorageError":               "The server could not save the change.",
+	"StreamUnavailable":          "The video stream is unavailable.",
+	"TooManyConnections":         "Too many open connections.",
+	"TooManyRequests":            "Too many attempts. Try again later.",
+	"Forbidden":                  "Access is denied.",
+	"Unauthorized":               "Access token is invalid or expired.",
+	"UnsupportedFilter":          "This filter is not supported.",
+	"UnsupportedMediaType":       "The content type is not supported.",
+	"UnsupportedQuery":           "This query is not supported.",
+	"UnsupportedSort":            "This sort order is not supported.",
+	"UpgradeUnsupported":         "The connection cannot be upgraded.",
+	"WebClientNotConfigured":     "The web client is not configured.",
+}
+
 func fail(w http.ResponseWriter, status int, code string) {
-	respond(w, status, object{"ResponseStatus": object{"ErrorCode": code, "Message": code}})
+	message := errorMessages[code]
+	if message == "" {
+		message = code
+	}
+	failText(w, status, message)
 }
 
 func (s *Server) internalError(w http.ResponseWriter) {
