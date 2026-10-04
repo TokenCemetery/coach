@@ -32,22 +32,44 @@ func homeSection(id, name, sectionType string, monitor []string, cardSizeOffset 
 	}
 }
 
+// homeTitles holds the home row titles for the languages chosen in #18. Emby
+// builds these names on the server from X-Emby-Language; the wording is Emby
+// Web's own for the same headings (modules/common/strings, keys HeaderMyMedia,
+// HeaderContinueWatching, HeaderLatestMovies, HeaderLatestEpisodes), so the
+// rows read like the rest of the client. Other languages get English.
+var homeTitles = map[string]map[string]string{
+	"ru": {"My Media": "Мои медиаданные", "Continue Watching": "Продолжение просмотра", "Latest Movies": "Недавно добавленные фильмы", "Latest Episodes": "Новые эпизоды"},
+	"de": {"My Media": "Meine Medien", "Continue Watching": "Weiterschauen", "Latest Movies": "Neueste Filme", "Latest Episodes": "Neueste Episoden"},
+	"fr": {"My Media": "Mes Médias", "Continue Watching": "Reprendre la lecture", "Latest Movies": "Derniers films", "Latest Episodes": "Derniers épisodes"},
+	"es": {"My Media": "Mis Contenidos", "Continue Watching": "Continuar viendo", "Latest Movies": "Ultimas Películas", "Latest Episodes": "Últimos episodios"},
+	"it": {"My Media": "I miei media", "Continue Watching": "Continua a guardare", "Latest Movies": "Ultimi film aggiunti", "Latest Episodes": "Ultimi episodi aggiunti"},
+}
+
+// homeTitle translates an English home row title for an X-Emby-Language value
+// such as "ru", "es-MX" or "fr_CA".
+func homeTitle(language, title string) string {
+	base := strings.ToLower(language)
+	if i := strings.IndexAny(base, "-_"); i >= 0 {
+		base = base[:i]
+	}
+	if translated, ok := homeTitles[base][title]; ok {
+		return translated
+	}
+	return title
+}
+
 // homeSections describes the home screen Coach can actually populate: the
 // library tiles, the resume row, and one latest row per library. Sections for
-// media Coach does not serve yet (audio, Live TV, next up) are not advertised.
-//
-// Emby localises these names server-side using X-Emby-Language; Coach returns
-// English until it has a localisation table, so a non-English client shows
-// English row headings.
-func (s *Server) homeSections(serverID string) []object {
+// media Coach does not serve yet (audio, Live TV) are not advertised.
+func (s *Server) homeSections(serverID, language string) []object {
 	sections := []object{
-		homeSection("smalllibrarytiles", "My Media", "userviews", []string{}, -1),
-		homeSection("resume", "Continue Watching", "resume", []string{"videoplayback", "markplayed"}, 0),
+		homeSection("smalllibrarytiles", homeTitle(language, "My Media"), "userviews", []string{}, -1),
+		homeSection("resume", homeTitle(language, "Continue Watching"), "resume", []string{"videoplayback", "markplayed"}, 0),
 	}
 	for _, id := range s.libraryIDs() {
-		name, collectionType := "Latest Movies", "movies"
+		name, collectionType := homeTitle(language, "Latest Movies"), "movies"
 		if id == s.media.SeriesLibraryID() {
-			name, collectionType = "Latest Episodes", "tvshows"
+			name, collectionType = homeTitle(language, "Latest Episodes"), "tvshows"
 		}
 		latest := homeSection("latestmedia_"+id, name, "latestmedia",
 			[]string{"markplayed", "videoplayback"}, 0)
@@ -123,7 +145,7 @@ func (s *Server) sectionItems(w http.ResponseWriter, r *http.Request, token stri
 
 func (s *Server) homeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /users/{user}/homesections", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
-		respond(w, 200, s.homeSections(s.store.Snapshot().ServerID))
+		respond(w, 200, s.homeSections(s.store.Snapshot().ServerID, value(r, "X-Emby-Language")))
 	}))
 	mux.HandleFunc("GET /users/{user}/sections/{section}/items", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		s.sectionItems(w, r, token)
