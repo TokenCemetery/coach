@@ -6,7 +6,7 @@ Go-backend для совместимости с Emby Web: локальная у�
 
 ## Запуск
 
-Нужны Go 1.25+ и Linux/macOS. Единственная внешняя Go-зависимость сервера — `gopkg.in/yaml.v3` для файлов локализации; остальные есть только у отдельного модуля e2e-тестов (`e2e/go.mod`).
+Нужны Go 1.25+ и Linux/macOS.
 
 ```sh
 go build -o bin/coach ./cmd/coach
