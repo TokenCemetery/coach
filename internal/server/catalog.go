@@ -284,7 +284,9 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 	nextUp := map[string]time.Time{}
 	if resume && query["includenextup"] == "true" {
 		for _, c := range s.nextUpEpisodes(snapshot.User.Items, "", "") {
-			nextUp[c.next.ID] = c.lastPlayed
+			if !snapshot.User.Items[c.next.ID].HiddenFromResume {
+				nextUp[c.next.ID] = c.lastPlayed
+			}
 		}
 	}
 	lastPlayed := func(id string) time.Time {

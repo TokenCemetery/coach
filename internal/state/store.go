@@ -55,6 +55,9 @@ type ItemState struct {
 	LastPlayed    time.Time
 	// LastSearched records when the user opened the item from search results.
 	LastSearched time.Time
+	// HiddenFromResume keeps a next-up episode out of Continue Watching after
+	// "Remove from Continue Watching", until the item is played again.
+	HiddenFromResume bool `json:",omitempty"`
 }
 
 // maxTrackedItems bounds the state file independently of its byte limit.

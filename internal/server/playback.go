@@ -230,6 +230,7 @@ func (s *Server) reportPlaystate(event string) authenticated {
 				st.PositionTicks = position
 			}
 			st.LastPlayed = time.Now().UTC()
+			st.HiddenFromResume = false
 			switch event {
 			case "start":
 				st.PlayCount++
@@ -307,8 +308,10 @@ func (s *Server) setItemFlag(favorite, value bool) authenticated {
 	}
 }
 
-// hideFromResume serves "Remove from Continue Watching". Resume lists items
-// by stored position, so hiding clears it; Hide=false has nothing to restore.
+// hideFromResume serves "Remove from Continue Watching". Hiding clears the
+// stored position, which removes an item in progress, and marks the item so a
+// next-up episode is not offered either. Hide=false clears the mark only; the
+// position is not restored.
 func (s *Server) hideFromResume(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	var hide *bool
@@ -325,6 +328,7 @@ func (s *Server) hideFromResume(w http.ResponseWriter, r *http.Request, token st
 		if *hide {
 			st.PositionTicks = 0
 		}
+		st.HiddenFromResume = *hide
 	})
 	if err != nil {
 		s.changed(w, err)
@@ -333,21 +337,39 @@ func (s *Server) hideFromResume(w http.ResponseWriter, r *http.Request, token st
 	respond(w, 200, data)
 }
 
-// resumeItems lists items with meaningful stored progress, most recent first.
+// resumeItems fills the home Continue Watching row: items with meaningful
+// stored progress plus, because the section advertises IncludeNextUpInResume,
+// each started series' next episode dated by the series' last watch. Most
+// recent first.
 func (s *Server) resumeItems(limit int, token string) []object {
 	snapshot := s.store.Snapshot()
 	serverID := snapshot.ServerID
 	candidates := []*media.Item{}
+	played := map[string]time.Time{}
+	for _, c := range s.nextUpEpisodes(snapshot.User.Items, "", "") {
+		if snapshot.User.Items[c.next.ID].HiddenFromResume {
+			continue
+		}
+		candidates = append(candidates, c.next)
+		played[c.next.ID] = c.lastPlayed
+	}
 	if s.media != nil {
 		for i := range s.media.Items {
 			item := &s.media.Items[i]
-			if resumable(snapshot.User.Items[item.ID], item.RunTimeTicks) {
+			st := snapshot.User.Items[item.ID]
+			if !resumable(st, item.RunTimeTicks) {
+				continue
+			}
+			if _, listed := played[item.ID]; !listed {
 				candidates = append(candidates, item)
+			}
+			if st.LastPlayed.After(played[item.ID]) {
+				played[item.ID] = st.LastPlayed
 			}
 		}
 	}
 	slices.SortFunc(candidates, func(a, b *media.Item) int {
-		if c := snapshot.User.Items[b.ID].LastPlayed.Compare(snapshot.User.Items[a.ID].LastPlayed); c != 0 {
+		if c := played[b.ID].Compare(played[a.ID]); c != 0 {
 			return c
 		}
 		return strings.Compare(a.ID, b.ID)

@@ -74,11 +74,13 @@ func (s *Server) sectionItems(w http.ResponseWriter, r *http.Request, token stri
 	limit := 12
 	if text := r.URL.Query().Get("Limit"); text != "" {
 		v, err := strconv.Atoi(text)
-		if err != nil || v < 0 || v > 1000 {
+		if err != nil || v < 0 {
 			fail(w, 400, "InvalidPagination")
 			return
 		}
-		limit = v
+		// The card menu asks for the whole row with Limit=5000 to offer
+		// "play from here"; a row never needs more than 1000 items.
+		limit = min(v, 1000)
 	}
 	snapshot := s.store.Snapshot()
 	serverID := snapshot.ServerID
