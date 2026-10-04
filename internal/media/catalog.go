@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -29,6 +30,8 @@ type Catalog struct {
 	Folders []Item
 	Skipped int
 	root    *os.Root
+	// extractor delivers embedded text subtitles; nil without FFmpeg.
+	extractor *subtitleExtractor
 }
 
 // Item is a movie, series, season, or episode in the catalogue.
@@ -119,7 +122,15 @@ func Scan(ctx context.Context, directory string) (*Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	return scan(ctx, directory, probe)
+	catalog, err := scan(ctx, directory, probe)
+	if err != nil {
+		return nil, err
+	}
+	// FFmpeg is optional: without it only sidecar subtitles are delivered.
+	if binary, err := exec.LookPath("ffmpeg"); err == nil {
+		catalog.extractor = newSubtitleExtractor(binary)
+	}
+	return catalog, nil
 }
 
 func scan(ctx context.Context, directory string, probe func(context.Context, *os.File) (Item, error)) (*Catalog, error) {

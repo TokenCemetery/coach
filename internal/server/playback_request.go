@@ -110,22 +110,8 @@ func hasSubtitle(item media.Item, index int64) bool {
 	return false
 }
 
-func externalSubtitle(item media.Item, index int64) bool {
-	for _, stream := range item.Streams {
-		if stream.Type == "Subtitle" && stream.Path != "" && int64(stream.Index) == index {
-			return true
-		}
-	}
-	return false
-}
-
 func (p playbackRequest) supportsDirectStream(item media.Item, video, audio *media.Stream) bool {
 	if video == nil || (p.EnableDirectStream != nil && !*p.EnableDirectStream) {
-		return false
-	}
-	// Only sidecar subtitles are delivered; extraction and burn-in of embedded
-	// ones are not implemented. Never promise a subtitle Coach cannot deliver.
-	if p.SubtitleStreamIndex != nil && *p.SubtitleStreamIndex >= 0 && !externalSubtitle(item, *p.SubtitleStreamIndex) {
 		return false
 	}
 	if p.MaxAudioChannels != nil && *p.MaxAudioChannels > 0 && audio != nil && (audio.Channels <= 0 || int64(audio.Channels) > *p.MaxAudioChannels) {

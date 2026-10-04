@@ -71,10 +71,10 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 	}
 	playSession := randomSessionID()
 	streams := mediaStreams(item)
-	// Sidecar subtitles are fetched by the player beside the direct stream.
-	// Like the stream URL, theirs carries the token for a <track> element.
+	// Deliverable subtitles are fetched by the player beside the direct
+	// stream. Like the stream URL, theirs carries the token for a <track>.
 	for i, stream := range item.Streams {
-		if stream.Path != "" {
+		if s.media.SubtitleDeliverable(item, stream.Index) {
 			streams[i]["DeliveryMethod"] = "External"
 			streams[i]["DeliveryFormat"] = "vtt"
 			streams[i]["IsExternalUrl"] = false
@@ -82,7 +82,13 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 		}
 	}
 	source := mediaSource(item, streams)
-	direct := body.supportsDirectStream(item, video, audio)
+	// Subtitles are delivered as separate WebVTT files; burn-in is not
+	// implemented. Never promise a selected subtitle Coach cannot deliver.
+	subtitle := -1
+	if body.SubtitleStreamIndex != nil && *body.SubtitleStreamIndex >= 0 {
+		subtitle = int(*body.SubtitleStreamIndex)
+	}
+	direct := body.supportsDirectStream(item, video, audio) && (subtitle < 0 || s.media.SubtitleDeliverable(item, subtitle))
 	source["SupportsDirectPlay"] = false
 	source["SupportsDirectStream"] = direct
 	source["SupportsTranscoding"] = false
@@ -95,8 +101,8 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 		source["DefaultAudioStreamIndex"] = audio.Index
 	}
 	source["DefaultSubtitleStreamIndex"] = -1
-	if body.SubtitleStreamIndex != nil && externalSubtitle(item, *body.SubtitleStreamIndex) {
-		source["DefaultSubtitleStreamIndex"] = *body.SubtitleStreamIndex
+	if subtitle >= 0 && direct {
+		source["DefaultSubtitleStreamIndex"] = subtitle
 	}
 	response := object{"MediaSources": []object{source}, "PlaySessionId": playSession}
 	if direct {
@@ -112,7 +118,7 @@ func subtitleURL(item media.Item, index int, token string) string {
 	return "/videos/" + item.ID + "/mediasource_" + item.ID + "/subtitles/" + strconv.Itoa(index) + "/stream.vtt?api_key=" + url.QueryEscape(token)
 }
 
-// streamSubtitle serves a sidecar subtitle as WebVTT. The start position
+// streamSubtitle serves a sidecar or embedded text subtitle as WebVTT. The start position
 // variant of the route returns the whole file: players seek within it.
 func (s *Server) streamSubtitle(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 	item, found := s.findItem(r.PathValue("item"))
@@ -121,7 +127,7 @@ func (s *Server) streamSubtitle(w http.ResponseWriter, r *http.Request, token st
 		fail(w, 404, "NotFound")
 		return
 	}
-	text, err := s.media.OpenSubtitle(item, index)
+	text, err := s.media.OpenSubtitle(r.Context(), item, index)
 	if errors.Is(err, os.ErrNotExist) {
 		fail(w, 404, "NotFound")
 		return

@@ -27,6 +27,8 @@ func TestSidecarSubtitleDelivery(t *testing.T) {
 	defer func() { _ = catalog.Close() }()
 	movie := playbackMovie()
 	movie.Path = "Movie.mp4"
+	// A bitmap track cannot become WebVTT, so it stays undeliverable.
+	movie.Streams[3].Codec = "hdmv_pgs_subtitle"
 	movie.Streams = append(movie.Streams, media.Stream{Index: 4, Type: "Subtitle", Codec: "srt", Language: "ru", Path: "Movie.ru.srt"})
 	catalog.Items = []media.Item{movie}
 	store, _, _ := newTestServer(t)
@@ -60,7 +62,7 @@ func TestSidecarSubtitleDelivery(t *testing.T) {
 		t.Fatalf("external stream: %v", external)
 	}
 	if _, code := info("3"); code != "NoCompatibleStream" {
-		t.Fatalf("embedded subtitle: code %q, want NoCompatibleStream", code)
+		t.Fatalf("bitmap subtitle: code %q, want NoCompatibleStream", code)
 	}
 	// The player fetches the URL with only the token it carries.
 	w := request(h, "GET", "/emby"+deliveryURL, "", "", "")

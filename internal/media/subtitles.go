@@ -2,6 +2,7 @@ package media
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -91,16 +92,40 @@ func sidecarStream(item Item, subtitle, tags string) Stream {
 	return stream
 }
 
-// OpenSubtitle returns an external subtitle of item as WebVTT.
-func (c *Catalog) OpenSubtitle(item Item, index int) ([]byte, error) {
-	if c == nil || c.root == nil {
-		return nil, errors.New("catalogue has no open root")
-	}
-	i := slices.IndexFunc(item.Streams, func(s Stream) bool { return s.Index == index && s.Path != "" })
+// SubtitleDeliverable reports whether OpenSubtitle can serve the stream:
+// a sidecar file, or an embedded text track when FFmpeg is available.
+func (c *Catalog) SubtitleDeliverable(item Item, index int) bool {
+	i := slices.IndexFunc(item.Streams, func(s Stream) bool { return s.Index == index && s.Type == "Subtitle" })
 	if i < 0 {
+		return false
+	}
+	return item.Streams[i].Path != "" || (c != nil && c.extractor != nil && textSubtitleCodec(item.Streams[i].Codec))
+}
+
+// textSubtitleCodec lists embedded codecs FFmpeg converts to WebVTT. Bitmap
+// subtitles (PGS, DVD, DVB) would need burning into the video.
+func textSubtitleCodec(codec string) bool {
+	switch strings.ToLower(codec) {
+	case "subrip", "srt", "mov_text", "webvtt", "ass", "ssa", "text":
+		return true
+	}
+	return false
+}
+
+// OpenSubtitle returns a subtitle stream of item as WebVTT.
+func (c *Catalog) OpenSubtitle(ctx context.Context, item Item, index int) ([]byte, error) {
+	if c == nil || c.root == nil || !c.SubtitleDeliverable(item, index) {
 		return nil, os.ErrNotExist
 	}
-	stream := item.Streams[i]
+	stream := item.Streams[slices.IndexFunc(item.Streams, func(s Stream) bool { return s.Index == index && s.Type == "Subtitle" })]
+	if stream.Path == "" {
+		file, err := c.Open(item)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = file.Close() }()
+		return c.extractor.extract(ctx, file, index)
+	}
 	file, err := c.root.OpenFile(filepath.FromSlash(stream.Path), os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, errors.New("subtitle file is unavailable")
@@ -120,8 +145,6 @@ func (c *Catalog) OpenSubtitle(item Item, index int) ([]byte, error) {
 	return toWebVTT(data, stream.Codec)
 }
 
-// srtTiming matches an SRT timestamp; WebVTT needs a dot before the
-// milliseconds and at least two hour digits.
 var srtTiming = regexp.MustCompile(`\b(\d{1,2}):(\d{2}):(\d{2}),(\d{3})\b`)
 
 // toWebVTT converts SRT to WebVTT and passes WebVTT through. Only UTF-8 (with

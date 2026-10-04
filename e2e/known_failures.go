@@ -31,7 +31,6 @@ var (
 var knownFailures = map[string]knownFailure{
 	// Behavior checks
 	"hls-master-playlist": hlsDelivery,
-	"subtitle-webvtt":     subtitles,
 	// ActivityLogService
 	"getSystemActivitylogEntries": administration,
 	// ArtistsService
@@ -408,22 +407,18 @@ var knownFailures = map[string]knownFailure{
 	"getEncodingSubtitleoptions":  subtitles,
 	"postEncodingSubtitleoptions": subtitles,
 	// SubtitleService
-	"deleteItemsByIdSubtitlesByIndex":                                                 subtitles,
-	"deleteVideosByIdSubtitlesByIndex":                                                subtitles,
-	"getItemsByIdByMediasourceidSubtitlesByIndexByStartpositionticksStreamByFormat":   subtitles,
-	"getItemsByIdByMediasourceidSubtitlesByIndexStreamByFormat":                       subtitles,
-	"getItemsByIdRemotesearchSubtitlesByLanguage":                                     subtitles,
-	"getProvidersSubtitlesSubtitlesById":                                              subtitles,
-	"getVideosByIdByMediasourceidAttachmentsByIndexStream":                            subtitles,
-	"getVideosByIdByMediasourceidSubtitlesByIndexByStartpositionticksStreamByFormat":  subtitles,
-	"getVideosByIdByMediasourceidSubtitlesByIndexStreamByFormat":                      subtitles,
-	"headItemsByIdByMediasourceidSubtitlesByIndexByStartpositionticksStreamByFormat":  subtitles,
-	"headItemsByIdByMediasourceidSubtitlesByIndexStreamByFormat":                      subtitles,
-	"headVideosByIdByMediasourceidSubtitlesByIndexByStartpositionticksStreamByFormat": subtitles,
-	"headVideosByIdByMediasourceidSubtitlesByIndexStreamByFormat":                     subtitles,
-	"postItemsByIdRemotesearchSubtitlesBySubtitleid":                                  subtitles,
-	"postItemsByIdSubtitlesByIndexDelete":                                             subtitles,
-	"postVideosByIdSubtitlesByIndexDelete":                                            subtitles,
+	"deleteItemsByIdSubtitlesByIndex":                                                subtitles,
+	"deleteVideosByIdSubtitlesByIndex":                                               subtitles,
+	"getItemsByIdByMediasourceidSubtitlesByIndexByStartpositionticksStreamByFormat":  subtitles,
+	"getItemsByIdByMediasourceidSubtitlesByIndexStreamByFormat":                      subtitles,
+	"getItemsByIdRemotesearchSubtitlesByLanguage":                                    subtitles,
+	"getProvidersSubtitlesSubtitlesById":                                             subtitles,
+	"getVideosByIdByMediasourceidAttachmentsByIndexStream":                           subtitles,
+	"headItemsByIdByMediasourceidSubtitlesByIndexByStartpositionticksStreamByFormat": subtitles,
+	"headItemsByIdByMediasourceidSubtitlesByIndexStreamByFormat":                     subtitles,
+	"postItemsByIdRemotesearchSubtitlesBySubtitleid":                                 subtitles,
+	"postItemsByIdSubtitlesByIndexDelete":                                            subtitles,
+	"postVideosByIdSubtitlesByIndexDelete":                                           subtitles,
 	// SuggestionsService
 	"getUsersByUseridSuggestions": unranked,
 	// SyncService
