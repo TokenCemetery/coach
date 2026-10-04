@@ -146,3 +146,55 @@ func TestNextUp(t *testing.T) {
 	expectStatus(t, request(h, "GET", "/Shows/NextUp?SortBy=Name", "", "", token), 400)
 	expectStatus(t, request(h, "GET", "/Shows/NextUp?UserId=other", "", "", token), 403)
 }
+
+func TestResumeIncludesNextUp(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	catalog := &media.Catalog{ID: "movies"}
+	episode := func(id, series string, number int) media.Item {
+		return media.Item{ID: id, Name: id, Kind: "Episode", ParentID: series + "-s", SeasonID: series + "-s", SeriesID: series, SeriesName: series, SeasonNumber: 1, EpisodeNumber: number, RunTimeTicks: 100000000}
+	}
+	catalog.Items = []media.Item{
+		{ID: "movie", Name: "Movie", RunTimeTicks: 100000000},
+		episode("a1", "a", 1), episode("a2", "a", 2),
+		episode("b1", "b", 1), episode("b2", "b", 2),
+		episode("c1", "c", 1), episode("c2", "c", 2),
+	}
+	h := New(store, "test", nil, catalog).Handler()
+	token := login(t, h)
+	now := time.Now()
+	if err := store.Change(token, func(d *state.Data, _ *state.Session) {
+		d.User.Items = map[string]state.ItemState{
+			"movie": {PositionTicks: 50000000, LastPlayed: now.Add(-30 * time.Minute)},
+			"a1":    {Played: true, LastPlayed: now.Add(-time.Hour)},
+			"b1":    {Played: true, LastPlayed: now.Add(-10 * time.Minute)},
+			"c1":    {PositionTicks: 50000000, LastPlayed: now},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	base := "/Users/" + store.Snapshot().User.ID + "/Items/Resume?Recursive=true&MediaTypes=Video"
+	for _, tc := range []struct{ query, ids string }{
+		{"", "c1,movie"},
+		{"&IncludeNextUp=false", "c1,movie"},
+		// Next-up episodes are dated by when their series was last watched.
+		{"&IncludeNextUp=true", "c1,b2,movie,a2"},
+		{"&IncludeNextUp=true&IncludeItemTypes=Episode&ParentId=" + catalog.SeriesLibraryID(), "c1,b2,a2"},
+		{"&IncludeNextUp=true&ParentId=a", "a2"},
+		{"&IncludeNextUp=true&Limit=1&StartIndex=1", "b2"},
+	} {
+		w := request(h, "GET", base+tc.query, "", "", token)
+		expectStatus(t, w, 200)
+		var page struct{ Items []struct{ Id string } }
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		ids := []string{}
+		for _, item := range page.Items {
+			ids = append(ids, item.Id)
+		}
+		if strings.Join(ids, ",") != tc.ids {
+			t.Fatalf("%s: got %v, want %s", tc.query, ids, tc.ids)
+		}
+	}
+	expectStatus(t, request(h, "GET", base+"&IncludeNextUp=maybe", "", "", token), 400)
+}

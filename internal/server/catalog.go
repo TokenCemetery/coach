@@ -197,7 +197,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			"startindex", "limit", "sortby", "sortorder", "isfolder", "isplayed", "isfavorite", "filters",
 			"fields", "enableimages", "enableimagetypes", "imagetypelimit", "enableuserdata", "enabletotalrecordcount", "groupitems",
 			"groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "excludelocationtypes",
-			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids", "wassearched", "minpremieredate", "isunaired":
+			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids", "wassearched", "minpremieredate", "isunaired", "includenextup":
 		default:
 			if !strings.HasPrefix(key, "x-emby-") {
 				fail(w, 400, "UnsupportedQuery")
@@ -205,7 +205,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			}
 		}
 	}
-	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite", "groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "wassearched", "isunaired"} {
+	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite", "groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "wassearched", "isunaired", "includenextup"} {
 		query[key] = strings.ToLower(query[key])
 		if v := query[key]; v != "" && v != "true" && v != "false" {
 			fail(w, 400, "InvalidQuery")
@@ -279,6 +279,21 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 	}
 	snapshot := s.store.Snapshot()
 	serverID := snapshot.ServerID
+	// Continue Watching with IncludeNextUp also offers each started series'
+	// next episode, dated by when the series was last watched.
+	nextUp := map[string]time.Time{}
+	if resume && query["includenextup"] == "true" {
+		for _, c := range s.nextUpEpisodes(snapshot.User.Items, "", "") {
+			nextUp[c.next.ID] = c.lastPlayed
+		}
+	}
+	lastPlayed := func(id string) time.Time {
+		played := snapshot.User.Items[id].LastPlayed
+		if series, ok := nextUp[id]; ok && series.After(played) {
+			return series
+		}
+		return played
+	}
 	// Select and paginate metadata before allocating response DTOs.
 	items := []*media.Item{}
 	isCollection := func(item *media.Item) bool {
@@ -320,7 +335,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			kind = "CollectionFolder"
 		}
 		return (query["ids"] != "" && !member(query["ids"], id)) || member(query["excludeitemids"], id) ||
-			(resume && !resumable(st, item.RunTimeTicks)) ||
+			(resume && !resumable(st, item.RunTimeTicks) && nextUp[id].IsZero()) ||
 			(query["includeitemtypes"] != "" && !member(query["includeitemtypes"], kind)) || member(query["excludeitemtypes"], kind) ||
 			(query["mediatypes"] != "" && (folder || !member(query["mediatypes"], "Video"))) ||
 			(query["isfolder"] != "" && (query["isfolder"] == "true") != folder) ||
@@ -362,7 +377,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 		case "datecreated":
 			comparison = a.Modified.Compare(b.Modified)
 		case "dateplayed":
-			comparison = snapshot.User.Items[a.ID].LastPlayed.Compare(snapshot.User.Items[b.ID].LastPlayed)
+			comparison = lastPlayed(a.ID).Compare(lastPlayed(b.ID))
 		case "datelastsearched", "datelastsearched,sortname":
 			comparison = snapshot.User.Items[a.ID].LastSearched.Compare(snapshot.User.Items[b.ID].LastSearched)
 			if comparison == 0 && sortBy != "datelastsearched" {

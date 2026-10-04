@@ -15,7 +15,7 @@ var (
 	hlsDelivery          = knownFailure{21, "remux and HLS delivery are not implemented"}
 	transcoding          = knownFailure{22, "transcoding is not implemented"}
 	subtitles            = knownFailure{24, "audio and subtitle track selection and subtitle delivery are not implemented"}
-	nextUpAndCollections = knownFailure{40, "Next Up in Continue Watching, missing episodes and collections are not implemented"}
+	nextUpAndCollections = knownFailure{40, "missing episodes and collections are not implemented"}
 	administration       = knownFailure{33, "administration is not implemented (single non-admin user)"}
 	backup               = knownFailure{32, "backup and restore are not implemented"}
 	unranked             = knownFailure{34, "not implemented; not ranked by real usage yet"}
@@ -30,9 +30,8 @@ var (
 // Grouped by Emby service; generated from the first run and edited by hand.
 var knownFailures = map[string]knownFailure{
 	// Behavior checks
-	"hls-master-playlist":     hlsDelivery,
-	"resume-includes-next-up": nextUpAndCollections,
-	"subtitle-webvtt":         subtitles,
+	"hls-master-playlist": hlsDelivery,
+	"subtitle-webvtt":     subtitles,
 	// ActivityLogService
 	"getSystemActivitylogEntries": administration,
 	// ArtistsService

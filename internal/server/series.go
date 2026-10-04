@@ -97,47 +97,7 @@ func (s *Server) nextUp(w http.ResponseWriter, r *http.Request, token string, se
 		}
 	}
 	snapshot := s.store.Snapshot()
-	type candidate struct {
-		next       *media.Item
-		lastPlayed time.Time
-	}
-	candidates := []candidate{}
-	if s.media != nil {
-		parent := query["parentid"]
-		episodes := map[string][]*media.Item{}
-		for i := range s.media.Items {
-			item := &s.media.Items[i]
-			if item.Type() != "Episode" || item.SeasonNumber == 0 ||
-				(query["seriesid"] != "" && item.SeriesID != query["seriesid"]) ||
-				(parent != "" && parent != rootID && parent != s.media.SeriesLibraryID() && parent != item.SeriesID) {
-				continue
-			}
-			episodes[item.SeriesID] = append(episodes[item.SeriesID], item)
-		}
-		for _, list := range episodes {
-			slices.SortFunc(list, func(a, b *media.Item) int {
-				return cmp.Or(cmp.Compare(a.SeasonNumber, b.SeasonNumber), cmp.Compare(a.EpisodeNumber, b.EpisodeNumber), strings.Compare(a.ID, b.ID))
-			})
-			furthest, c := -1, candidate{}
-			for i, item := range list {
-				st := snapshot.User.Items[item.ID]
-				if st.Played {
-					furthest = i
-				}
-				if st.LastPlayed.After(c.lastPlayed) {
-					c.lastPlayed = st.LastPlayed
-				}
-			}
-			// Nothing after the furthest played episode is played, so it is the next one.
-			if furthest >= 0 && furthest+1 < len(list) {
-				c.next = list[furthest+1]
-				candidates = append(candidates, c)
-			}
-		}
-	}
-	slices.SortFunc(candidates, func(a, b candidate) int {
-		return cmp.Or(b.lastPlayed.Compare(a.lastPlayed), strings.Compare(a.next.SeriesID, b.next.SeriesID))
-	})
+	candidates := s.nextUpEpisodes(snapshot.User.Items, query["seriesid"], query["parentid"])
 	total := len(candidates)
 	start = min(start, total)
 	result := make([]object, 0, min(limit, total-start))
@@ -145,4 +105,55 @@ func (s *Server) nextUp(w http.ResponseWriter, r *http.Request, token string, se
 		result = append(result, s.movieDTO(*c.next, snapshot.ServerID, snapshot.User.Items, token))
 	}
 	respond(w, 200, object{"Items": result, "TotalRecordCount": total})
+}
+
+// nextUpCandidate is a started series' next episode and when the series was
+// last watched.
+type nextUpCandidate struct {
+	next       *media.Item
+	lastPlayed time.Time
+}
+
+// nextUpEpisodes finds, per started series, the first unplayed episode after
+// the furthest played one, most recently watched series first. seriesID and
+// parent narrow the series; empty values select all.
+func (s *Server) nextUpEpisodes(states map[string]state.ItemState, seriesID, parent string) []nextUpCandidate {
+	candidates := []nextUpCandidate{}
+	if s.media == nil {
+		return candidates
+	}
+	episodes := map[string][]*media.Item{}
+	for i := range s.media.Items {
+		item := &s.media.Items[i]
+		if item.Type() != "Episode" || item.SeasonNumber == 0 ||
+			(seriesID != "" && item.SeriesID != seriesID) ||
+			(parent != "" && parent != rootID && parent != s.media.SeriesLibraryID() && parent != item.SeriesID) {
+			continue
+		}
+		episodes[item.SeriesID] = append(episodes[item.SeriesID], item)
+	}
+	for _, list := range episodes {
+		slices.SortFunc(list, func(a, b *media.Item) int {
+			return cmp.Or(cmp.Compare(a.SeasonNumber, b.SeasonNumber), cmp.Compare(a.EpisodeNumber, b.EpisodeNumber), strings.Compare(a.ID, b.ID))
+		})
+		furthest, c := -1, nextUpCandidate{}
+		for i, item := range list {
+			st := states[item.ID]
+			if st.Played {
+				furthest = i
+			}
+			if st.LastPlayed.After(c.lastPlayed) {
+				c.lastPlayed = st.LastPlayed
+			}
+		}
+		// Nothing after the furthest played episode is played, so it is the next one.
+		if furthest >= 0 && furthest+1 < len(list) {
+			c.next = list[furthest+1]
+			candidates = append(candidates, c)
+		}
+	}
+	slices.SortFunc(candidates, func(a, b nextUpCandidate) int {
+		return cmp.Or(b.lastPlayed.Compare(a.lastPlayed), strings.Compare(a.next.SeriesID, b.next.SeriesID))
+	})
+	return candidates
 }
