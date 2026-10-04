@@ -64,6 +64,35 @@ func folderUserData() object {
 	return object{"PlaybackPositionTicks": 0, "IsFavorite": false, "Played": false}
 }
 
+// folderEpisodes lists the episodes of a series or season.
+func (s *Server) folderEpisodes(folder media.Item) []media.Item {
+	episodes := []media.Item{}
+	for _, item := range s.media.Items {
+		if item.SeriesID == folder.ID || item.SeasonID == folder.ID {
+			episodes = append(episodes, item)
+		}
+	}
+	return episodes
+}
+
+// folderPlayed reports a series or season as played once all its episodes
+// are, with the count of unplayed ones, like the reference Emby.
+func (s *Server) folderPlayed(folder media.Item, items map[string]state.ItemState) (played bool, unplayed int) {
+	episodes := s.folderEpisodes(folder)
+	for _, episode := range episodes {
+		if !items[episode.ID].Played {
+			unplayed++
+		}
+	}
+	return len(episodes) > 0 && unplayed == 0, unplayed
+}
+
+func (s *Server) folderPlayedData(folder media.Item, items map[string]state.ItemState) object {
+	played, unplayed := s.folderPlayed(folder, items)
+	return object{"UnplayedItemCount": unplayed, "PlaybackPositionTicks": 0, "PlayCount": 0,
+		"IsFavorite": items[folder.ID].IsFavorite, "Played": played}
+}
+
 // itemUserData reports stored playback state. PlayedPercentage is only present
 // when there is a position to report, matching the reference responses.
 func itemUserData(st state.ItemState, runtime int64) object {
@@ -181,6 +210,7 @@ func (s *Server) movieDTO(item media.Item, serverID string, items map[string]sta
 	}
 	if item.IsFolder() {
 		dto["ChildCount"] = s.childCount(item.ID)
+		dto["UserData"] = s.folderPlayedData(item, items)
 		return dto
 	}
 	dto["MediaType"] = "Video"

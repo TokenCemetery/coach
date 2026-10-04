@@ -308,25 +308,43 @@ func (s *Server) setItemFlag(favorite, value bool) authenticated {
 			fail(w, 404, "NotFound")
 			return
 		}
+		// Marking a series or season played marks its episodes, as in Emby; the
+		// folder's own Played is derived from them.
+		if !favorite && item.IsFolder() {
+			for _, episode := range s.folderEpisodes(item) {
+				if _, err := s.updateItem(token, episode, func(st *state.ItemState) { setPlayed(st, value) }); err != nil {
+					s.changed(w, err)
+					return
+				}
+			}
+			data := s.folderPlayedData(item, s.store.Snapshot().User.Items)
+			data["ItemId"] = item.ID
+			respond(w, 200, data)
+			return
+		}
 		data, err := s.updateItem(token, item, func(st *state.ItemState) {
 			if favorite {
 				st.IsFavorite = value
 				return
 			}
-			st.Played = value
-			if value {
-				st.PositionTicks = 0
-				st.LastPlayed = time.Now().UTC()
-				if st.PlayCount == 0 {
-					st.PlayCount = 1
-				}
-			}
+			setPlayed(st, value)
 		})
 		if err != nil {
 			s.changed(w, err)
 			return
 		}
 		respond(w, 200, data)
+	}
+}
+
+func setPlayed(st *state.ItemState, value bool) {
+	st.Played = value
+	if value {
+		st.PositionTicks = 0
+		st.LastPlayed = time.Now().UTC()
+		if st.PlayCount == 0 {
+			st.PlayCount = 1
+		}
 	}
 }
 

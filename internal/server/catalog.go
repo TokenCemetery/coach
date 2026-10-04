@@ -350,6 +350,9 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 	items = slices.DeleteFunc(items, func(item *media.Item) bool {
 		id, kind, folder := item.ID, item.Type(), item.IsFolder() || isCollection(item)
 		st := snapshot.User.Items[id]
+		if item.IsFolder() {
+			st.Played, _ = s.folderPlayed(*item, snapshot.User.Items)
+		}
 		if isCollection(item) {
 			kind = "CollectionFolder"
 		}

@@ -291,3 +291,54 @@ func TestLibraryTabRequests(t *testing.T) {
 	}
 	expectStatus(t, request(h, "GET", user+"/Items?SortBy=Random", "", "", token), 400)
 }
+
+func TestMarkSeriesPlayed(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	catalog := &media.Catalog{ID: "movies"}
+	for _, series := range []string{"a", "b"} {
+		catalog.Folders = append(catalog.Folders,
+			media.Item{ID: series, Name: series, Kind: "Series", ParentID: catalog.SeriesLibraryID()},
+			media.Item{ID: series + "-s", Name: "Season 1", Kind: "Season", ParentID: series, SeriesID: series, SeasonNumber: 1})
+	}
+	for _, id := range []string{"a1", "a2", "b1"} {
+		series := id[:1]
+		catalog.Items = append(catalog.Items, media.Item{ID: id, Name: id, Kind: "Episode", ParentID: series + "-s", SeasonID: series + "-s", SeriesID: series, SeasonNumber: 1, EpisodeNumber: int(id[1] - '0'), RunTimeTicks: 100000000})
+	}
+	h := New(store, "test", nil, catalog).Handler()
+	token := login(t, h)
+	uid := store.Snapshot().User.ID
+	userData := func(id string) (played bool, unplayed int) {
+		w := request(h, "GET", "/Users/"+uid+"/Items/"+id, "", "", token)
+		expectStatus(t, w, 200)
+		var item struct {
+			UserData struct {
+				Played            bool
+				UnplayedItemCount int
+			}
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &item); err != nil {
+			t.Fatal(err)
+		}
+		return item.UserData.Played, item.UserData.UnplayedItemCount
+	}
+	if played, unplayed := userData("a"); played || unplayed != 2 {
+		t.Fatalf("before: played=%v unplayed=%d", played, unplayed)
+	}
+	w := request(h, "POST", "/Users/"+uid+"/PlayedItems/a-s", "", "", token)
+	expectStatus(t, w, 200)
+	if !strings.Contains(w.Body.String(), `"Played":true`) {
+		t.Fatalf("season response: %s", w.Body.String())
+	}
+	for id, want := range map[string]bool{"a1": true, "a2": true, "b1": false, "a": true, "a-s": true, "b": false} {
+		if played, _ := userData(id); played != want {
+			t.Fatalf("%s played = %v", id, played)
+		}
+	}
+	if got := pageIDs(t, h, "/Users/"+uid+"/Items?ParentId="+catalog.SeriesLibraryID()+"&IncludeItemTypes=Series&Filters=IsPlayed", token); got != "a" {
+		t.Fatalf("IsPlayed series: %s", got)
+	}
+	expectStatus(t, request(h, "DELETE", "/Users/"+uid+"/PlayedItems/a", "", "", token), 200)
+	if played, unplayed := userData("a"); played || unplayed != 2 {
+		t.Fatalf("after unmark: played=%v unplayed=%d", played, unplayed)
+	}
+}
