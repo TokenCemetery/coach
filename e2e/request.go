@@ -35,13 +35,20 @@ var requestOverrides = map[string]func(*Request, Fixtures){
 	"postUsersAuthenticatebyname": func(r *Request, _ Fixtures) {
 		r.Body = []byte(`{"Username":"` + testUser + `","Pw":"` + testPassword + `"}`)
 	},
-	"postSessionsPlaying":         playstateBody,
-	"postSessionsPlayingProgress": playstateBody,
-	"postSessionsPlayingStopped":  playstateBody,
+	"postSessionsPlaying":              playstateBody,
+	"postSessionsPlayingProgress":      playstateBody,
+	"postSessionsPlayingStopped":       playstateBody,
+	"postUsersByIdImagesByType":        avatarUpload,
+	"postUsersByIdImagesByTypeByIndex": avatarUpload,
 	// Emby Web always reports at least one item and WasSearched.
 	"postUsersByUseridSearcheditems": func(r *Request, ids Fixtures) {
 		r.Body = fmt.Appendf(nil, `{"Ids":[%q],"WasSearched":true}`, ids.MovieID)
 	},
+}
+
+// avatarUpload sends an image the way Emby Web does: base64 text, not bytes.
+func avatarUpload(r *Request, _ Fixtures) {
+	r.Body = avatarBody()
 }
 
 // playstateBody reports playback of the movie, which the playstate

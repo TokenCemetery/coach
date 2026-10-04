@@ -94,6 +94,7 @@ func (s *Server) catalogRoutes(mux *http.ServeMux) {
 	s.extrasRoutes(mux)
 	s.seriesRoutes(mux)
 	s.imageRoutes(mux)
+	s.userImageRoutes(mux)
 	mux.HandleFunc("GET /itemtypes", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		s.listItems(w, r, false, false)
 	}))

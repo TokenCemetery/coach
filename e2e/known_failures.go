@@ -19,7 +19,6 @@ var (
 	administration       = knownFailure{33, "administration is not implemented (single non-admin user)"}
 	backup               = knownFailure{32, "backup and restore are not implemented"}
 	unranked             = knownFailure{34, "not implemented; not ranked by real usage yet"}
-	partialService       = knownFailure{45, "only part of this service is implemented"}
 	notCalledByWeb       = knownFailure{34, "Emby Web 4.10.0.40 does not call it; use by other clients is not ranked yet"}
 	notOfferedByWeb      = knownFailure{34, "Emby Web 4.10.0.40 offers it only for item flags or media types Coach does not send; not ranked yet"}
 )
@@ -132,8 +131,6 @@ var knownFailures = map[string]knownFailure{
 	// ImageService
 	"deleteItemsByIdImagesByType":            administration,
 	"deleteItemsByIdImagesByTypeByIndex":     administration,
-	"deleteUsersByIdImagesByType":            partialService,
-	"deleteUsersByIdImagesByTypeByIndex":     partialService,
 	"getArtistsByNameImagesByType":           notCalledByWeb,
 	"getArtistsByNameImagesByTypeByIndex":    notCalledByWeb,
 	"getGamegenresByNameImagesByType":        notCalledByWeb,
@@ -148,8 +145,6 @@ var knownFailures = map[string]knownFailure{
 	"getPersonsByNameImagesByTypeByIndex":     notCalledByWeb,
 	"getStudiosByNameImagesByType":            notCalledByWeb,
 	"getStudiosByNameImagesByTypeByIndex":     notCalledByWeb,
-	"getUsersByIdImagesByType":                notOfferedByWeb,
-	"getUsersByIdImagesByTypeByIndex":         notOfferedByWeb,
 	"headArtistsByNameImagesByType":           notCalledByWeb,
 	"headArtistsByNameImagesByTypeByIndex":    notCalledByWeb,
 	"headGamegenresByNameImagesByType":        notCalledByWeb,
@@ -163,18 +158,12 @@ var knownFailures = map[string]knownFailure{
 	"headPersonsByNameImagesByTypeByIndex":     notCalledByWeb,
 	"headStudiosByNameImagesByType":            notCalledByWeb,
 	"headStudiosByNameImagesByTypeByIndex":     notCalledByWeb,
-	"headUsersByIdImagesByType":                notOfferedByWeb,
-	"headUsersByIdImagesByTypeByIndex":         notOfferedByWeb,
 	"postItemsByIdImagesByType":                administration,
 	"postItemsByIdImagesByTypeByIndex":         administration,
 	"postItemsByIdImagesByTypeByIndexDelete":   administration,
 	"postItemsByIdImagesByTypeByIndexIndex":    administration,
 	"postItemsByIdImagesByTypeByIndexUrl":      administration,
 	"postItemsByIdImagesByTypeDelete":          administration,
-	"postUsersByIdImagesByType":                partialService,
-	"postUsersByIdImagesByTypeByIndex":         partialService,
-	"postUsersByIdImagesByTypeByIndexDelete":   partialService,
-	"postUsersByIdImagesByTypeDelete":          partialService,
 	// InstantMixService
 	"getAlbumsByIdInstantmix":        unranked,
 	"getArtistsInstantmix":           unranked,

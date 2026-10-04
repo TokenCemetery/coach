@@ -186,7 +186,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := s.store.Snapshot()
-	respond(w, 200, object{"User": userDTO(d), "SessionInfo": sessionDTO(d, session), "AccessToken": token, "ServerId": d.ServerID})
+	respond(w, 200, object{"User": s.userDTO(d, token), "SessionInfo": sessionDTO(d, session), "AccessToken": token, "ServerId": d.ServerID})
 }
 
 type authenticated func(http.ResponseWriter, *http.Request, string, state.Session)

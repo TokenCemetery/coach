@@ -70892,6 +70892,14 @@ paths:
         style: simple
         schema:
           $ref: '#/components/schemas/ImageType'
+      - name: Index
+        in: path
+        description: Image Index
+        required: true
+        style: simple
+        schema:
+          type: integer
+          format: int32
       requestBody:
         description: Binary stream
         content:
@@ -70917,6 +70925,8 @@ paths:
       - apikeyauth: []
       - embyauth: []
       x-RequiredAuthentication: Requires authentication as user
+      x-coach-source: The path has {Index}, but the Emby document does not declare it; added as in the other
+        Users/{Id}/Images/{Type}/{Index} operations.
     delete:
       tags:
       - ImageService

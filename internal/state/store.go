@@ -42,6 +42,8 @@ type User struct {
 	// Items holds per-item playback state keyed by item ID. It is absent in
 	// state written before playback existed and is created on first write.
 	Items map[string]ItemState
+	// Image is the uploaded avatar, absent until one is uploaded.
+	Image *UserImage `json:",omitempty"`
 }
 
 // ItemState is the durable part of an item's UserData.

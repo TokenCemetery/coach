@@ -3,9 +3,12 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"net"
 	"net/http"
@@ -110,6 +113,9 @@ func (s *Suite) Start() (*Instance, error) {
 		err = inst.login()
 		if err == nil {
 			err = inst.discover()
+		}
+		if err == nil {
+			err = inst.uploadAvatar()
 		}
 		if err != nil {
 			inst.Stop()
@@ -248,6 +254,24 @@ func (inst *Instance) login() error {
 	}
 	inst.Token, inst.IDs.UserID, inst.IDs.SessionID = result.AccessToken, result.User.Id, result.SessionInfo.Id
 	return nil
+}
+
+// uploadAvatar gives the user an avatar the way Emby Web uploads one, so the
+// user image operations have an image to serve and delete.
+func (inst *Instance) uploadAvatar() error {
+	r := Request{Method: "POST", Path: "/Users/" + inst.IDs.UserID + "/Images/Primary", Body: avatarBody(), ContentType: "image/png"}
+	resp, err := inst.Send(r, true)
+	if err == nil && resp.Status != http.StatusNoContent {
+		err = fmt.Errorf("upload avatar: status %d: %s", resp.Status, snippet(resp.Body))
+	}
+	return err
+}
+
+// avatarBody is a 1x1 PNG encoded as base64, as Emby Web sends an avatar.
+func avatarBody() []byte {
+	var b bytes.Buffer
+	_ = png.Encode(&b, image.NewGray(image.Rect(0, 0, 1, 1)))
+	return []byte(base64.StdEncoding.EncodeToString(b.Bytes()))
 }
 
 func (inst *Instance) discover() error {

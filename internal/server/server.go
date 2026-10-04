@@ -67,8 +67,13 @@ func publicUser(d state.Data) object {
 	return object{"Name": d.User.Name, "ServerId": d.ServerID, "Prefix": "", "Id": d.User.ID, "HasPassword": true, "HasConfiguredPassword": true}
 }
 
-func userDTO(d state.Data) object {
+// userDTO describes the user to the session identified by token, which the
+// avatar's PrimaryImageTag is signed for.
+func (s *Server) userDTO(d state.Data, token string) object {
 	u := publicUser(d)
+	if tag := s.userImageTag(d, token); tag != "" {
+		u["PrimaryImageTag"] = tag
+	}
 	config := defaultConfiguration()
 	for k, v := range d.User.Configuration {
 		config[k] = v
@@ -163,7 +168,7 @@ func (s *Server) Handler() http.Handler {
 		respond(w, 200, object{"IsLocal": local, "IsInNetwork": lan, "NetworkType": network})
 	}))
 	user := s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
-		respond(w, 200, userDTO(s.store.Snapshot()))
+		respond(w, 200, s.userDTO(s.store.Snapshot(), token))
 	})
 	mux.HandleFunc("GET /users/{user}", user)
 	mux.HandleFunc("GET /users/me", user)
@@ -191,7 +196,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET "+path, s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 			d := s.store.Snapshot()
 			if configuration {
-				respond(w, 200, userDTO(d)["Configuration"])
+				respond(w, 200, s.userDTO(d, token)["Configuration"])
 			} else {
 				respond(w, 200, d.User.Settings)
 			}
