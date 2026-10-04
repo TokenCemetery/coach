@@ -32,6 +32,7 @@ type Catalog struct {
 	root    *os.Root
 	// extractor delivers embedded text subtitles; nil without FFmpeg.
 	extractor *subtitleExtractor
+	index     catalogIndex
 }
 
 // Item is a movie, series, season, or episode in the catalogue.

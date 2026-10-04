@@ -15,7 +15,7 @@ import (
 
 const testPassword = "test-only-password-not-a-real-secret"
 
-func newTestServer(t *testing.T) (*state.Store, http.Handler, string) {
+func newTestServer(t testing.TB) (*state.Store, http.Handler, string) {
 	t.Helper()
 	dir := t.TempDir()
 	s, err := state.Open(dir)
@@ -42,14 +42,14 @@ func request(h http.Handler, method, path, contentType, body, token string) *htt
 	return w
 }
 
-func expectStatus(t *testing.T, w *httptest.ResponseRecorder, status int) {
+func expectStatus(t testing.TB, w *httptest.ResponseRecorder, status int) {
 	t.Helper()
 	if w.Code != status {
 		t.Fatalf("status = %d, want %d", w.Code, status)
 	}
 }
 
-func login(t *testing.T, h http.Handler) string {
+func login(t testing.TB, h http.Handler) string {
 	t.Helper()
 	w := request(h, "POST", "/emby/Users/authenticatebyname?X-Emby-Client=Emby+Web&X-Emby-Device-Id=test-device", "application/x-www-form-urlencoded", url.Values{"Username": {"viewer"}, "Pw": {testPassword}}.Encode(), "")
 	expectStatus(t, w, 200)

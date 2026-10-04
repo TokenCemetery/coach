@@ -66,13 +66,7 @@ func folderUserData() object {
 
 // folderEpisodes lists the episodes of a series or season.
 func (s *Server) folderEpisodes(folder media.Item) []media.Item {
-	episodes := []media.Item{}
-	for _, item := range s.media.Items {
-		if item.SeriesID == folder.ID || item.SeasonID == folder.ID {
-			episodes = append(episodes, item)
-		}
-	}
-	return episodes
+	return s.media.Episodes(folder.ID)
 }
 
 // folderPlayed reports a series or season as played once all its episodes
@@ -172,15 +166,7 @@ func (s *Server) libraryIDs() []string {
 }
 
 func (s *Server) childCount(id string) int {
-	count := 0
-	for _, items := range [][]media.Item{s.media.Items, s.media.Folders} {
-		for _, item := range items {
-			if s.media.Parent(item) == id {
-				count++
-			}
-		}
-	}
-	return count
+	return s.media.ChildCount(id)
 }
 
 func (s *Server) movieDTO(item media.Item, serverID string, items map[string]state.ItemState, token string) object {
