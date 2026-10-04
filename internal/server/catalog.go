@@ -187,7 +187,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			"startindex", "limit", "sortby", "sortorder", "isfolder", "isplayed", "isfavorite", "filters",
 			"fields", "enableimages", "enableimagetypes", "imagetypelimit", "enableuserdata", "enabletotalrecordcount", "groupitems",
 			"groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "excludelocationtypes",
-			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids", "wassearched":
+			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids", "wassearched", "minpremieredate", "isunaired":
 		default:
 			if !strings.HasPrefix(key, "x-emby-") {
 				fail(w, 400, "UnsupportedQuery")
@@ -195,7 +195,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			}
 		}
 	}
-	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite", "groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "wassearched"} {
+	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite", "groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "wassearched", "isunaired"} {
 		query[key] = strings.ToLower(query[key])
 		if v := query[key]; v != "" && v != "true" && v != "false" {
 			fail(w, 400, "InvalidQuery")
@@ -235,6 +235,23 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			}
 			*target = v
 		}
+	}
+	if text, exists := query["minpremieredate"]; exists {
+		if _, err := time.Parse(time.RFC3339, text); err != nil {
+			fail(w, 400, "InvalidQuery")
+			return
+		}
+	}
+	// Catalogued items carry no premiere date, so they never satisfy a premiere
+	// bound and are never unaired; Emby likewise omits undated items. The result
+	// is empty whatever the requested sort, so the sort is not validated.
+	if query["minpremieredate"] != "" || query["isunaired"] == "true" {
+		if latest {
+			respond(w, 200, []any{})
+		} else {
+			respond(w, 200, object{"Items": []any{}, "TotalRecordCount": 0})
+		}
+		return
 	}
 	sortBy, order := strings.ToLower(query["sortby"]), strings.ToLower(query["sortorder"])
 	if latest && sortBy == "" {

@@ -42,6 +42,10 @@ func TestSeriesCatalog(t *testing.T) {
 		{"/Shows/show/Episodes?SeasonId=season&Limit=1&StartIndex=1", "e2"},
 		{"/Items?Recursive=true&IncludeItemTypes=Episode&SearchTerm=Two", "e2"},
 		{"/Users/" + store.Snapshot().User.ID + "/Sections/latestmedia_movies/Items", "movie"},
+		// Premieres row of the TV Suggestions tab; Coach has no premiere dates.
+		{"/Items?IncludeItemTypes=Episode&Recursive=true&SortBy=ProductionYear,PremiereDate,SortParentIndexNumber,SortIndexNumber&SortOrder=Descending,Descending,Ascending,Ascending&MinPremiereDate=2026-09-20T08:35:05.677Z&IsUnaired=false&ParentId=" + catalog.SeriesLibraryID() + "&Limit=12", ""},
+		{"/Items?Recursive=true&IncludeItemTypes=Episode&IsUnaired=true", ""},
+		{"/Items?Recursive=true&IncludeItemTypes=Episode&IsUnaired=false&SortBy=ParentIndexNumber,IndexNumber", "sp1,e1,e2"},
 	} {
 		w := request(h, "GET", tc.path, "", "", token)
 		expectStatus(t, w, 200)
@@ -68,6 +72,8 @@ func TestSeriesCatalog(t *testing.T) {
 	expectStatus(t, request(h, "GET", "/Shows/show/Episodes?IsSpecialSeason=false", "", "", token), 400)
 	expectStatus(t, request(h, "GET", "/Items?ExcludeLocationTypes=FileSystem", "", "", token), 400)
 	expectStatus(t, request(h, "GET", "/Items?IsStandaloneSpecial=yes", "", "", token), 400)
+	expectStatus(t, request(h, "GET", "/Items?MinPremiereDate=yesterday", "", "", token), 400)
+	expectStatus(t, request(h, "GET", "/Items?IsUnaired=maybe", "", "", token), 400)
 	expectStatus(t, request(h, "GET", "/Shows/show/Episodes?UserId=other", "", "", token), 403)
 	expectStatus(t, request(h, "POST", "/Sessions/Playing", "application/json", `{"ItemId":"season"}`, token), 404)
 	w := request(h, "GET", "/Items/e1", "", "", token)
