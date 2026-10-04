@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/TokenCemetery/coach/internal/media"
@@ -51,4 +52,57 @@ func TestSearchItemTypes(t *testing.T) {
 			expectStatus(t, request(h, "GET", endpoint+"?"+key+"=invalid", "", "", token), 400)
 		}
 	}
+}
+
+func TestSearchHistory(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	catalog := &media.Catalog{ID: "movies", Items: []media.Item{
+		{ID: "a", Name: "Alpha"}, {ID: "b", Name: "Beta"}, {ID: "c", Name: "Gamma"},
+	}}
+	h := New(store, "test", nil, catalog).Handler()
+	token := login(t, h)
+	base := "/Users/" + store.Snapshot().User.ID
+	report := func(body string, status int) {
+		t.Helper()
+		expectStatus(t, request(h, "POST", base+"/SearchedItems", "application/json", body, token), status)
+	}
+	ids := func(path string) string {
+		t.Helper()
+		w := request(h, "GET", base+path, "", "", token)
+		expectStatus(t, w, 200)
+		var page struct{ Items []struct{ Id string } }
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		list := []string{}
+		for _, item := range page.Items {
+			list = append(list, item.Id)
+		}
+		return strings.Join(list, ",")
+	}
+	report(`{"Ids":["b"],"WasSearched":true}`, 204)
+	report(`{"Ids":["c"],"WasSearched":true}`, 204)
+	// Queries sent by Emby Web 4.10.0.40 search.js and searchfields.js.
+	if got := ids("/Items?Recursive=true&ImageTypeLimit=1&WasSearched=true&SortBy=DateLastSearched&SortOrder=Descending"); got != "c,b" {
+		t.Fatal(got)
+	}
+	if got := ids("/Items?SortBy=DateLastSearched,SortName&SortOrder=Descending&Limit=20&Recursive=true&EnableTotalRecordCount=false&WasSearched=true"); got != "c,b" {
+		t.Fatal(got)
+	}
+	report(`{"Ids":["c"],"WasSearched":false}`, 204)
+	if got := ids("/Items?Recursive=true&WasSearched=true"); got != "b" {
+		t.Fatal(got)
+	}
+	if got := ids("/Items?Recursive=true&WasSearched=false"); got != "a,c" {
+		t.Fatal(got)
+	}
+	if _, kept := store.Snapshot().User.Items["c"]; kept {
+		t.Fatal("cleared search state was kept")
+	}
+	report(`{"Ids":["missing"],"WasSearched":true}`, 404)
+	for _, body := range []string{`{"Ids":[],"WasSearched":true}`, `{"Ids":["a"]}`, `{"Ids":null,"WasSearched":true}`} {
+		report(body, 400)
+	}
+	expectStatus(t, request(h, "GET", base+"/Items?WasSearched=maybe", "", "", token), 400)
+	expectStatus(t, request(h, "POST", "/Users/other/SearchedItems", "application/json", `{"Ids":["a"],"WasSearched":true}`, token), 403)
 }

@@ -157,7 +157,7 @@ M2 остаётся открытым. Сравнительных замеров 
 - `GET /Shows/{id}/Seasons?IsSpecialSeason=false` отклонялся (`UnsupportedQuery`), карточка сериала не открывалась. Параметр теперь фильтрует Season 00.
 - «Воспроизвести» на сериале запрашивает `Items` с `Filters=IsNotFolder`, `IsStandaloneSpecial=false`, `ExcludeLocationTypes=Virtual`, `CollapseBoxSetItems=false` и получал 400. Фильтры папок и спецвыпусков реализованы (без данных о размещении спецвыпусков каждый эпизод Season 00 считается отдельным). Исключение Virtual/Offline/Remote и сворачивание коллекций — no-op, так как таких объектов в Coach нет; другие значения отклоняются.
 
-Не реализовано: история поиска. `POST /Users/{id}/SearchedItems` возвращает 404, а `Items?WasSearched=true&SortBy=DateLastSearched` — 400. Клиент не ждёт первого запроса; пустая страница поиска остаётся пустой без сообщения об ошибке.
+Не реализовано: история поиска. `POST /Users/{id}/SearchedItems` возвращает 404, а `Items?WasSearched=true&SortBy=DateLastSearched` — 400. Клиент не ждёт первого запроса; пустая страница поиска остаётся пустой без сообщения об ошибке. 2026-10-04 оба запроса реализованы по коду клиента и покрыты HTTP-тестом; в браузере строка «Недавно искали» ещё не проверена.
 
 Автоматические проверки после исправлений: `go test -race -cover ./...` успешно (media 83,1 %, server 82,4 %, state 71,7 %); `go vet ./...`, gofmt, кросс-сборка Linux amd64 и `COACH_WEB_DIR=../emby-webui COACH_CHECK_MEDIA=1 node scripts/check-emby-client.mjs` успешны. Linux-бинарник не запускался.
 

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/TokenCemetery/coach/internal/media"
 	"github.com/TokenCemetery/coach/internal/state"
@@ -76,6 +77,7 @@ func (s *Server) catalogRoutes(mux *http.ServeMux) {
 			s.listItems(w, r, latest, false)
 		}))
 	}
+	mux.HandleFunc("POST /users/{user}/searcheditems", s.protect(s.reportSearched))
 	s.extrasRoutes(mux)
 	s.seriesRoutes(mux)
 	s.imageRoutes(mux)
@@ -123,6 +125,40 @@ func (s *Server) extrasRoutes(mux *http.ServeMux) {
 	}))
 }
 
+// reportSearched records items the user opened from search results; Emby Web
+// lists them on the empty search page as "Recently searched".
+func (s *Server) reportSearched(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+	var report struct {
+		Ids         []string
+		WasSearched *bool
+	}
+	if decodeJSON(w, r, &report) != nil || len(report.Ids) == 0 || len(report.Ids) > 100 || report.WasSearched == nil {
+		fail(w, 400, "InvalidRequest")
+		return
+	}
+	for _, id := range report.Ids {
+		if _, found := s.findItem(id); !found {
+			fail(w, 404, "NotFound")
+			return
+		}
+	}
+	now := time.Now().UTC()
+	for _, id := range report.Ids {
+		err := s.store.SetItem(token, id, func(st *state.ItemState) {
+			if *report.WasSearched {
+				st.LastSearched = now
+			} else {
+				st.LastSearched = time.Time{}
+			}
+		})
+		if err != nil {
+			s.changed(w, err)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resume bool) {
 	token, _ := requestToken(r) // Callers have already authenticated this request.
 	typesOnly := r.URL.Path == "/itemtypes"
@@ -138,7 +174,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			"startindex", "limit", "sortby", "sortorder", "isfolder", "isplayed", "isfavorite", "filters",
 			"fields", "enableimages", "enableimagetypes", "imagetypelimit", "enableuserdata", "enabletotalrecordcount", "groupitems",
 			"groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "excludelocationtypes",
-			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids":
+			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids", "wassearched":
 		default:
 			if !strings.HasPrefix(key, "x-emby-") {
 				fail(w, 400, "UnsupportedQuery")
@@ -146,7 +182,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			}
 		}
 	}
-	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite", "groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems"} {
+	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite", "groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "wassearched"} {
 		query[key] = strings.ToLower(query[key])
 		if v := query[key]; v != "" && v != "true" && v != "false" {
 			fail(w, 400, "InvalidQuery")
@@ -197,7 +233,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 	if sortBy == "" {
 		sortBy = "sortname"
 	}
-	if (!member("sortname,name,datecreated,dateplayed,runtime,indexnumber", sortBy) && sortBy != "parentindexnumber,indexnumber") || (order != "" && order != "ascending" && order != "descending") {
+	if (!member("sortname,name,datecreated,dateplayed,runtime,indexnumber,datelastsearched", sortBy) && sortBy != "parentindexnumber,indexnumber" && sortBy != "datelastsearched,sortname") || (order != "" && order != "ascending" && order != "descending") {
 		fail(w, 400, "UnsupportedSort")
 		return
 	}
@@ -251,6 +287,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			!strings.Contains(strings.ToLower(item.Name), strings.ToLower(query["searchterm"])) ||
 			(query["isplayed"] != "" && (query["isplayed"] == "true") != st.Played) ||
 			(query["isfavorite"] != "" && (query["isfavorite"] == "true") != st.IsFavorite) ||
+			(query["wassearched"] != "" && (query["wassearched"] == "true") == st.LastSearched.IsZero()) ||
 			(member(query["filters"], "IsPlayed") && !st.Played) ||
 			(member(query["filters"], "IsUnplayed") && st.Played) ||
 			(member(query["filters"], "IsFavorite") && !st.IsFavorite) ||
@@ -286,6 +323,11 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			comparison = a.Modified.Compare(b.Modified)
 		case "dateplayed":
 			comparison = snapshot.User.Items[a.ID].LastPlayed.Compare(snapshot.User.Items[b.ID].LastPlayed)
+		case "datelastsearched", "datelastsearched,sortname":
+			comparison = snapshot.User.Items[a.ID].LastSearched.Compare(snapshot.User.Items[b.ID].LastSearched)
+			if comparison == 0 && sortBy != "datelastsearched" {
+				comparison = strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+			}
 		case "runtime":
 			comparison = cmp.Compare(a.RunTimeTicks, b.RunTimeTicks)
 		case "indexnumber", "parentindexnumber,indexnumber":

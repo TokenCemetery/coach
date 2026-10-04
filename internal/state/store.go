@@ -51,6 +51,8 @@ type ItemState struct {
 	Played        bool
 	IsFavorite    bool
 	LastPlayed    time.Time
+	// LastSearched records when the user opened the item from search results.
+	LastSearched time.Time
 }
 
 // maxTrackedItems bounds the state file independently of its byte limit.

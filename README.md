@@ -93,7 +93,7 @@ API принимает маршруты без префикса и с `/emby/`, 
 | Сессия | `GET /System/Info`, `GET /Users/{id}`, `GET /Users/Me`, `GET /Sessions`, `POST /Sessions/Logout` |
 | Возможности клиента | `POST /Sessions/Capabilities/Full` |
 | Настройки | `GET/POST /usersettings/{id}`, `POST /usersettings/{id}/Partial`, пользовательская Configuration |
-| Каталог | Views, Items, ItemTypes для поиска, Items/{id}, Latest, root, Shows/{id}/Seasons и Episodes, Shows/NextUp; фильтры по сохранённым Played/Favorite; пагинация Resume |
+| Каталог | Views, Items, ItemTypes для поиска, Items/{id}, Latest, root, Shows/{id}/Seasons и Episodes, Shows/NextUp; фильтры по сохранённым Played/Favorite; история поиска (`POST /Users/{id}/SearchedItems`, `WasSearched`, `SortBy=DateLastSearched`); пагинация Resume |
 | Обложки | GET/HEAD Items/{id}/Images/Primary[/0], подписанные ImageTags или API-токен |
 | Главный экран | HomeSections, Sections/{id}/Items, Resume |
 | Воспроизведение | PlaybackInfo, Videos/{id}/stream.*, Sessions/Playing, /Progress, /Stopped |
