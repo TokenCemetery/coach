@@ -121,3 +121,17 @@ func TestHideFromResume(t *testing.T) {
 		t.Fatal("hidden item is still resumable")
 	}
 }
+
+func TestThumbnailSetIsEmpty(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	catalog := &media.Catalog{ID: "movies", Items: []media.Item{{ID: "a", Name: "Alpha"}}}
+	h := New(store, "test", nil, catalog).Handler()
+	token := login(t, h)
+	w := request(h, "GET", "/Items/a/ThumbnailSet?Width=320", "", "", token)
+	expectStatus(t, w, 200)
+	var set struct{ Thumbnails []any }
+	if err := json.Unmarshal(w.Body.Bytes(), &set); err != nil || set.Thumbnails == nil || len(set.Thumbnails) != 0 {
+		t.Fatal("unexpected thumbnail set", w.Body.String())
+	}
+	expectStatus(t, request(h, "GET", "/Items/missing/ThumbnailSet?Width=320", "", "", token), 404)
+}

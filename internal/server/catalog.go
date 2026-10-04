@@ -136,6 +136,15 @@ func (s *Server) extrasRoutes(mux *http.ServeMux) {
 		empty := object{"Items": []any{}, "TotalRecordCount": 0, "OwnerId": r.PathValue("item")}
 		respond(w, 200, object{"ThemeVideosResult": empty, "ThemeSongsResult": empty, "SoundtrackSongsResult": empty})
 	}))
+	// Coach generates no seek-bar previews. Emby Web's player re-requests the
+	// set after every failure, so an empty set is answered instead of 404.
+	mux.HandleFunc("GET /items/{item}/thumbnailset", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+		if !known(r) {
+			fail(w, 404, "NotFound")
+			return
+		}
+		respond(w, 200, object{"Thumbnails": []any{}})
+	}))
 }
 
 // reportSearched records items the user opened from search results; Emby Web

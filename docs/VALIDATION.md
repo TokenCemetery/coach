@@ -167,8 +167,8 @@ M2 остаётся открытым. Сравнительных замеров 
 
 Окружение: Go 1.27.1, macOS arm64, FFmpeg 9.0.2, Allure CLI 3.14.3. `make e2e` успешен примерно за 20 секунд. Всего 530 тестов: 527 операций `api/openapi.yaml` и 3 поведенческие проверки.
 
-- **72 прошли.**
-- **458 отмечены ожидаемыми падениями** в `e2e/known_failures.go`. Почти все они — 404 на нереализованных маршрутах. Кроме них:
+- **73 прошли.**
+- **457 отмечены ожидаемыми падениями** в `e2e/known_failures.go`. Почти все они — 404 на нереализованных маршрутах. Кроме них:
   - 4 административные операции `/Users/Query|Prefixes|ItemAccess|CopyDataOptions` дают 403;
   - 3 поведенческие проверки падают по своим причинам: HLS и WebVTT — 404, `Resume?IncludeNextUp` — 400;
   - первый прогон нашёл 4 реализованные операции, расходящиеся с контрактом ([#44](https://github.com/TokenCemetery/coach/issues/44)): тип `OwnerId` в ThemeMedia, маршрут `SearchedItems/` с завершающим слешем, тела `POST /UserSettings/{id}` и `/Users/{id}/Configuration/Partial`. Во всех четырёх случаях Emby Web 4.10.0.40 (`modules/emby-apiclient/apiclient.js`, `modules/thememediaplayer.js`) ведёт себя как Coach, поэтому исправлен контракт с пометкой `x-coach-source`.

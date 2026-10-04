@@ -44,8 +44,7 @@ var knownFailures = map[string]knownFailure{
 	"postBackuprestoreRestore":     backup,
 	"postBackuprestoreRestoredata": backup,
 	// BifService
-	"getItemsByIdThumbnailset": partialService,
-	"getVideosByIdIndexBif":    partialService,
+	"getVideosByIdIndexBif": partialService,
 	// ChannelService
 	"getChannels": unranked,
 	// CodecParameterService
