@@ -3,8 +3,10 @@ package server
 import (
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/TokenCemetery/coach/internal/media"
+	"github.com/TokenCemetery/coach/internal/state"
 )
 
 // largeLibrary has 1000 series of 2 seasons with 10 episodes each: 20 000
@@ -36,5 +38,40 @@ func BenchmarkSeriesPage(b *testing.B) {
 		if w := request(h, "GET", path, "", "", token); w.Code != 200 {
 			b.Fatal(w.Code)
 		}
+	}
+}
+
+// BenchmarkScreens times the requests Emby Web makes for the home screen,
+// search and an item page, with 300 series started.
+func BenchmarkScreens(b *testing.B) {
+	store, _, _ := newTestServer(b)
+	catalog := largeLibrary()
+	h := New(store, "test", nil, catalog).Handler()
+	token := login(b, h)
+	uid := store.Snapshot().User.ID
+	if err := store.Change(token, func(d *state.Data, _ *state.Session) {
+		d.User.Items = map[string]state.ItemState{}
+		for s := range 300 {
+			d.User.Items["series-"+strconv.Itoa(s)+"-s1-e1"] = state.ItemState{Played: true, LastPlayed: time.Now().Add(-time.Duration(s) * time.Minute)}
+		}
+	}); err != nil {
+		b.Fatal(err)
+	}
+	for _, tc := range []struct{ name, path string }{
+		{"NextUp", "/Shows/NextUp?UserId=" + uid + "&Limit=24"},
+		{"ResumeSection", "/Users/" + uid + "/Sections/resume/Items?Limit=12"},
+		{"Latest", "/Users/" + uid + "/Items/Latest?ParentId=" + catalog.SeriesLibraryID() + "&Limit=16"},
+		{"Search", "/Users/" + uid + "/Items?SearchTerm=series-99&Recursive=true&Limit=24"},
+		{"Item", "/Users/" + uid + "/Items/series-500"},
+		{"Seasons", "/Shows/series-500/Seasons?UserId=" + uid},
+		{"Episodes", "/Shows/series-500/Episodes?UserId=" + uid + "&SeasonId=series-500-s1"},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			for b.Loop() {
+				if w := request(h, "GET", tc.path, "", "", token); w.Code != 200 {
+					b.Fatalf("%s: %d %s", tc.path, w.Code, w.Body.String())
+				}
+			}
+		})
 	}
 }
