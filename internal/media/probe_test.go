@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -46,6 +47,10 @@ func TestProbeProcess(t *testing.T) {
 		_, _ = os.Stdout.Write([]byte(strings.Repeat("x", maxProbeOutput+1)))
 	case "wait":
 		time.Sleep(30 * time.Second)
+	case "crash":
+		// Partial output, then death by signal, as a crashing FFprobe would.
+		_, _ = os.Stdout.WriteString(`{"streams":[`)
+		_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
 	case "environment":
 		if os.Getenv("FFREPORT") != "" {
 			os.Exit(1)
@@ -60,7 +65,7 @@ func TestProbeExecutionLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"overflow", "wait"} {
+	for _, mode := range []string{"overflow", "wait", "crash"} {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		_, err := runProbe(ctx, binary, nil, "-test.run=TestProbeProcess", "coach-probe-helper", mode)
 		cancel()
