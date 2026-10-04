@@ -38,6 +38,10 @@ var requestOverrides = map[string]func(*Request, Fixtures){
 	"postSessionsPlaying":         playstateBody,
 	"postSessionsPlayingProgress": playstateBody,
 	"postSessionsPlayingStopped":  playstateBody,
+	// Emby Web always reports at least one item and WasSearched.
+	"postUsersByUseridSearcheditems": func(r *Request, ids Fixtures) {
+		r.Body = fmt.Appendf(nil, `{"Ids":[%q],"WasSearched":true}`, ids.MovieID)
+	},
 }
 
 // playstateBody reports playback of the movie, which the playstate

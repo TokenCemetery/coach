@@ -167,11 +167,11 @@ M2 остаётся открытым. Сравнительных замеров 
 
 Окружение: Go 1.27.1, macOS arm64, FFmpeg 9.0.2, Allure CLI 3.14.3. `make e2e` успешен примерно за 20 секунд. Всего 530 тестов: 527 операций `api/openapi.yaml` и 3 поведенческие проверки.
 
-- **65 прошли.**
-- **465 отмечены ожидаемыми падениями** в `e2e/known_failures.go`. Почти все они — 404 на нереализованных маршрутах. Кроме них:
+- **69 прошли.**
+- **461 отмечены ожидаемыми падениями** в `e2e/known_failures.go`. Почти все они — 404 на нереализованных маршрутах. Кроме них:
   - 4 административные операции `/Users/Query|Prefixes|ItemAccess|CopyDataOptions` дают 403;
   - 3 поведенческие проверки падают по своим причинам: HLS и WebVTT — 404, `Resume?IncludeNextUp` — 400;
-  - 4 реализованные операции расходятся с контрактом, они вынесены в [#44](https://github.com/TokenCemetery/coach/issues/44): тип `OwnerId` в ThemeMedia, маршрут `SearchedItems/` с завершающим слешем, тела `POST /UserSettings/{id}` и `/Users/{id}/Configuration/Partial`.
+  - первый прогон нашёл 4 реализованные операции, расходящиеся с контрактом ([#44](https://github.com/TokenCemetery/coach/issues/44)): тип `OwnerId` в ThemeMedia, маршрут `SearchedItems/` с завершающим слешем, тела `POST /UserSettings/{id}` и `/Users/{id}/Configuration/Partial`. Во всех четырёх случаях Emby Web 4.10.0.40 (`modules/emby-apiclient/apiclient.js`, `modules/thememediaplayer.js`) ведёт себя как Coach, поэтому исправлен контракт с пометкой `x-coach-source`.
 
 Строгость карты проверена вручную:
 
@@ -180,7 +180,7 @@ M2 остаётся открытым. Сравнительных замеров 
 - неизвестный ключ ловит `TestKnownFailuresExist`;
 - искусственная регрессия `/healthz` (число вместо строки `version`) роняет `getHealthz`.
 
-`make e2e-report` построил Allure-отчёт; у результатов есть заголовки из `summary`, метки epic, feature и story, шаги с вложениями запроса и ответа. Каждое ожидаемое падение связано с issue: #21, #22, #24, #32, #33, #34, #40, #44 или #45. Ссылка видна в Allure.
+`make e2e-report` построил Allure-отчёт; у результатов есть заголовки из `summary`, метки epic, feature и story, шаги с вложениями запроса и ответа. Каждое ожидаемое падение связано с issue: #21, #22, #24, #32, #33, #34, #40 или #45. Ссылка видна в Allure.
 
 **Границы проверки:**
 

@@ -31916,10 +31916,13 @@ paths:
         content:
           application/json:
             schema:
-              type: array
-              items:
+              type: object
+              additionalProperties:
                 type: string
         required: true
+      x-coach-source: Emby Web 4.10.0.40 (modules/emby-apiclient/apiclient.js, updateDisplayPreferences) sends the settings
+        map of name to string value, the same shape GET /UserSettings/{UserId} returns; the Emby document
+        declares an array of strings.
       responses:
         '200':
           description: Operation successful. Empty response.
@@ -57948,7 +57951,7 @@ paths:
       - apikeyauth: []
       - embyauth: []
       x-RequiredAuthentication: Requires authentication as user
-  /Users/{UserId}/SearchedItems/:
+  /Users/{UserId}/SearchedItems:
     summary: Marks an item as a favorite
     post:
       tags:
@@ -57988,6 +57991,8 @@ paths:
       - apikeyauth: []
       - embyauth: []
       x-RequiredAuthentication: Requires authentication as user
+      x-coach-source: Emby Web 4.10.0.40 (modules/emby-apiclient/apiclient.js, reportSearched) posts Users/{UserId}/SearchedItems
+        without a trailing slash; the Emby document lists the path with one.
   /Users/{UserId}/Views:
     get:
       tags:
@@ -64231,13 +64236,15 @@ paths:
         schema:
           type: string
       requestBody:
-        description: Binary stream
+        description: 'UserConfiguration: changed properties only'
         content:
-          application/octet-stream:
+          application/json:
             schema:
-              type: string
-              format: binary
+              $ref: '#/components/schemas/UserConfiguration'
         required: true
+      x-coach-source: Emby Web 4.10.0.40 (modules/emby-apiclient/apiclient.js, updatePartialUserConfiguration) posts a JSON
+        object with the changed UserConfiguration properties as application/json; the Emby document declares
+        a binary stream.
       responses:
         '200':
           description: Operation successful. Empty response.
@@ -78723,8 +78730,9 @@ components:
       type: object
       properties:
         OwnerId:
-          type: integer
-          format: int64
+          type: string
+          x-coach-source: Item IDs are strings everywhere else in the contract and in Coach; Emby Web 4.10.0.40
+            (modules/thememediaplayer.js) only compares OwnerId for equality. The Emby document declares int64.
         Items:
           type: array
           items:

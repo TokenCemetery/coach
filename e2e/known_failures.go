@@ -20,7 +20,6 @@ var (
 	backup               = knownFailure{32, "backup and restore are not implemented"}
 	unranked             = knownFailure{34, "not implemented; not ranked by real usage yet"}
 	partialService       = knownFailure{45, "only part of this service is implemented"}
-	contractMismatch     = knownFailure{44, "Coach disagrees with the contract; triage pending"}
 )
 
 // knownFailures lists contract operations (by operationId) and behavior
@@ -29,11 +28,6 @@ var (
 //
 // Grouped by Emby service; generated from the first run and edited by hand.
 var knownFailures = map[string]knownFailure{
-	// Contract mismatches in implemented routes
-	"getItemsByIdThememedia":            contractMismatch,
-	"postUsersByIdConfigurationPartial": contractMismatch,
-	"postUsersByUseridSearcheditems":    contractMismatch,
-	"postUsersettingsByUserid":          contractMismatch,
 	// Behavior checks
 	"hls-master-playlist":     hlsDelivery,
 	"resume-includes-next-up": nextUpAndCollections,
