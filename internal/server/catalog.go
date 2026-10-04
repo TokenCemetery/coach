@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"net/http"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,6 +30,14 @@ func catalogQuery(r *http.Request) (map[string]string, error) {
 		}
 	}
 	return query, nil
+}
+
+// boolRank orders false before true.
+func boolRank(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func member(list, value string) bool {
@@ -197,7 +206,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			"startindex", "limit", "sortby", "sortorder", "isfolder", "isplayed", "isfavorite", "filters",
 			"fields", "enableimages", "enableimagetypes", "imagetypelimit", "enableuserdata", "enabletotalrecordcount", "groupitems",
 			"groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "excludelocationtypes",
-			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids", "wassearched", "minpremieredate", "isunaired", "includenextup":
+			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids", "wassearched", "minpremieredate", "isunaired", "includenextup", "isspecialepisode":
 		default:
 			if !strings.HasPrefix(key, "x-emby-") {
 				fail(w, 400, "UnsupportedQuery")
@@ -205,7 +214,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			}
 		}
 	}
-	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite", "groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "wassearched", "isunaired", "includenextup"} {
+	for _, key := range []string{"recursive", "isfolder", "isplayed", "isfavorite", "groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "wassearched", "isunaired", "includenextup", "isspecialepisode"} {
 		query[key] = strings.ToLower(query[key])
 		if v := query[key]; v != "" && v != "true" && v != "false" {
 			fail(w, 400, "InvalidQuery")
@@ -273,7 +282,14 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 	if sortBy == "" {
 		sortBy = "sortname"
 	}
-	if (!member("sortname,name,datecreated,dateplayed,runtime,indexnumber,datelastsearched", sortBy) && sortBy != "parentindexnumber,indexnumber" && sortBy != "datelastsearched,sortname") || (order != "" && order != "ascending" && order != "descending") {
+	sortKeys := strings.Split(sortBy, ",")
+	for _, key := range sortKeys {
+		if !member("sortname,name,datecreated,dateplayed,runtime,indexnumber,parentindexnumber,datelastsearched,isfolder,filename,seriessortname", key) {
+			fail(w, 400, "UnsupportedSort")
+			return
+		}
+	}
+	if order != "" && order != "ascending" && order != "descending" {
 		fail(w, 400, "UnsupportedSort")
 		return
 	}
@@ -351,7 +367,9 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			(member(query["filters"], "IsFolder") && !folder) ||
 			(member(query["filters"], "IsNotFolder") && folder) ||
 			// Without airing-order metadata, every Season 00 episode is a standalone special.
-			(query["isstandalonespecial"] != "" && (query["isstandalonespecial"] == "true") != (kind == "Episode" && item.SeasonNumber == 0))
+			(query["isstandalonespecial"] != "" && (query["isstandalonespecial"] == "true") != (kind == "Episode" && item.SeasonNumber == 0)) ||
+			// The series page lists specials (Season 00 episodes) in their own row.
+			(query["isspecialepisode"] != "" && (query["isspecialepisode"] == "true") != (kind == "Episode" && item.SeasonNumber == 0))
 	})
 	if typesOnly {
 		// Search tabs describe the full filtered result, independent of its page.
@@ -375,25 +393,34 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 	}
 	slices.SortFunc(items, func(a, b *media.Item) int {
 		comparison := 0
-		switch sortBy {
-		case "datecreated":
-			comparison = a.Modified.Compare(b.Modified)
-		case "dateplayed":
-			comparison = lastPlayed(a.ID).Compare(lastPlayed(b.ID))
-		case "datelastsearched", "datelastsearched,sortname":
-			comparison = snapshot.User.Items[a.ID].LastSearched.Compare(snapshot.User.Items[b.ID].LastSearched)
-			if comparison == 0 && sortBy != "datelastsearched" {
+		// Keys are compared in order; SortOrder applies to all of them.
+		for _, key := range sortKeys {
+			switch key {
+			case "datecreated":
+				comparison = a.Modified.Compare(b.Modified)
+			case "dateplayed":
+				comparison = lastPlayed(a.ID).Compare(lastPlayed(b.ID))
+			case "datelastsearched":
+				comparison = snapshot.User.Items[a.ID].LastSearched.Compare(snapshot.User.Items[b.ID].LastSearched)
+			case "runtime":
+				comparison = cmp.Compare(a.RunTimeTicks, b.RunTimeTicks)
+			case "parentindexnumber":
+				comparison = cmp.Compare(a.SeasonNumber, b.SeasonNumber)
+			case "indexnumber":
+				comparison = cmp.Compare(a.EpisodeNumber, b.EpisodeNumber)
+			case "isfolder":
+				// Folders first, as in a file browser.
+				comparison = -cmp.Compare(boolRank(a.IsFolder() || isCollection(a)), boolRank(b.IsFolder() || isCollection(b)))
+			case "filename":
+				comparison = strings.Compare(strings.ToLower(path.Base(a.Path)), strings.ToLower(path.Base(b.Path)))
+			case "seriessortname":
+				comparison = strings.Compare(strings.ToLower(a.SeriesName), strings.ToLower(b.SeriesName))
+			default:
 				comparison = strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 			}
-		case "runtime":
-			comparison = cmp.Compare(a.RunTimeTicks, b.RunTimeTicks)
-		case "indexnumber", "parentindexnumber,indexnumber":
-			comparison = cmp.Compare(a.SeasonNumber, b.SeasonNumber)
-			if comparison == 0 {
-				comparison = cmp.Compare(a.EpisodeNumber, b.EpisodeNumber)
+			if comparison != 0 {
+				break
 			}
-		default:
-			comparison = strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 		}
 		if comparison == 0 {
 			comparison = strings.Compare(a.ID, b.ID)

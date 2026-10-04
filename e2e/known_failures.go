@@ -271,7 +271,6 @@ var knownFailures = map[string]knownFailure{
 	"getLivetvListingprovidersDefault":      unranked,
 	"getLivetvListingprovidersLineups":      unranked,
 	"getLivetvManageChannels":               unranked,
-	"getLivetvPrograms":                     unranked,
 	"getLivetvProgramsRecommended":          unranked,
 	"getLivetvRecordingsById":               unranked,
 	"getLivetvRecordingsFolders":            unranked,
@@ -319,7 +318,6 @@ var knownFailures = map[string]knownFailure{
 	"postLivestreamsMediainfo": transcoding,
 	"postLivestreamsOpen":      transcoding,
 	// MoviesService
-	"getMoviesRecommendations": unranked,
 	// MusicGenresService
 	"getMusicgenres":       unranked,
 	"getMusicgenresByName": unranked,

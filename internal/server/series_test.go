@@ -245,3 +245,44 @@ func pageIDs(t *testing.T, h http.Handler, path, token string) string {
 	}
 	return strings.Join(ids, ",")
 }
+
+// TestLibraryTabRequests covers requests Emby Web sends from the series page
+// and the library tabs (issue 47).
+func TestLibraryTabRequests(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	catalog := &media.Catalog{ID: "movies"}
+	episode := func(id, series string, season, number int) media.Item {
+		return media.Item{ID: id, Name: id, Kind: "Episode", ParentID: series + "-s", SeasonID: series + "-s", SeriesID: series, SeriesName: series, SeasonNumber: season, EpisodeNumber: number, Path: series + "/" + id + ".mp4"}
+	}
+	catalog.Items = []media.Item{
+		{ID: "m1", Name: "Alpha", Path: "Movies/b-file.mp4"},
+		{ID: "m2", Name: "Beta", Path: "Movies/a-file.mp4"},
+		episode("b2", "Bravo", 1, 2), episode("b1", "Bravo", 1, 1),
+		episode("a1", "Alpha Show", 2, 1), episode("a0", "Alpha Show", 0, 1),
+	}
+	h := New(store, "test", nil, catalog).Handler()
+	token := login(t, h)
+	user := "/Users/" + store.Snapshot().User.ID
+	for _, id := range []string{"b2", "b1", "a1", "a0"} {
+		expectStatus(t, request(h, "POST", user+"/FavoriteItems/"+id, "", "", token), 200)
+	}
+	for _, tc := range []struct{ path, ids string }{
+		{user + "/Items?ParentId=Alpha Show&Recursive=true&IsFolder=false&IsSpecialEpisode=true&Limit=12", "a0"},
+		{user + "/Items?ParentId=Alpha Show&Recursive=true&IsFolder=false&IsSpecialEpisode=false", "a1"},
+		{user + "/Items?IncludeItemTypes=Episode&Filters=IsFavorite&Recursive=true&SortBy=SeriesSortName,ParentIndexNumber,IndexNumber,SortName&SortOrder=Ascending", "a0,a1,b1,b2"},
+		{user + "/Items?ParentId=movies&StartIndex=0&SortBy=IsFolder,Filename&Limit=50", "m2,m1"},
+	} {
+		if got := pageIDs(t, h, strings.ReplaceAll(tc.path, " ", "%20"), token); got != tc.ids {
+			t.Fatalf("%s: got %s, want %s", tc.path, got, tc.ids)
+		}
+	}
+	if got := pageIDs(t, h, "/LiveTv/Programs?HasAired=false&LibrarySeriesId=Bravo&Limit=12", token); got != "" {
+		t.Fatal("Live TV programs are not empty:", got)
+	}
+	w := request(h, "GET", "/Movies/Recommendations?ParentId=movies&categoryLimit=6&ItemLimit=12", "", "", token)
+	expectStatus(t, w, 200)
+	if strings.TrimSpace(w.Body.String()) != "[]" {
+		t.Fatal("recommendations are not empty:", w.Body.String())
+	}
+	expectStatus(t, request(h, "GET", user+"/Items?SortBy=Random", "", "", token), 400)
+}
