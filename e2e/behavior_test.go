@@ -5,6 +5,7 @@ import (
 	"context"
 	"mime"
 	"net/url"
+	"os"
 	"os/exec"
 	"path"
 	"slices"
@@ -185,6 +186,46 @@ var behaviors = []behavior{
 			}
 			if got := item.UserData.PlaybackPositionTicks; confirmed == 0 || got < confirmed || got > sent {
 				check.Errorf("position after restart %d, want between last confirmed %d and last sent %d", got, confirmed, sent)
+			}
+		},
+	},
+	{
+		Key:     "storage-error-is-reported",
+		Title:   "A failed state write is reported and not published",
+		Feature: "UserLibraryService",
+		Run: func(inst *Instance, check *Check) {
+			favorite := Request{Method: "POST", Path: "/Users/" + inst.IDs.UserID + "/FavoriteItems/" + inst.IDs.MovieID}
+			isFavorite := func() (bool, error) {
+				var item struct{ UserData struct{ IsFavorite bool } }
+				err := inst.Get("/emby/Users/"+inst.IDs.UserID+"/Items/"+inst.IDs.MovieID, &item)
+				return item.UserData.IsFavorite, err
+			}
+			// A read-only data directory fails the temp file creation, like a
+			// full disk or a read-only remount.
+			if os.Geteuid() == 0 {
+				check.Errorf("run the suite as a regular user: root ignores directory permissions")
+				return
+			}
+			if err := os.Chmod(inst.data, 0o500); err != nil { //nolint:gosec // a directory needs its execute bit
+				check.Errorf("make data read-only: %v", err)
+				return
+			}
+			resp, err := inst.Send(favorite, true)
+			if err := os.Chmod(inst.data, 0o700); err != nil { //nolint:gosec // the mode Coach creates the data directory with
+				check.Errorf("restore data permissions: %v", err)
+				return
+			}
+			if err != nil || resp.Status != 500 {
+				check.Errorf("favorite on read-only storage: status %d, err %v, want 500", resp.Status, err)
+			}
+			if got, err := isFavorite(); err != nil || got {
+				check.Errorf("after the failed write: IsFavorite %v, err %v, want false", got, err)
+			}
+			if resp, err := inst.Send(favorite, true); err != nil || resp.Status != 200 {
+				check.Errorf("favorite after storage recovers: status %d, err %v, want 200", resp.Status, err)
+			}
+			if got, err := isFavorite(); err != nil || !got {
+				check.Errorf("after recovery: IsFavorite %v, err %v, want true", got, err)
 			}
 		},
 	},
