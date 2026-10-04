@@ -34,28 +34,39 @@ func sidecarCodec(ext string) string {
 // attachSidecars adds subtitle files to the video they sit next to, as Emby
 // names them: "Movie.srt", "Movie.en.srt", "Movie.en.forced.srt" belong to
 // "Movie.mp4". A file whose name extends two videos' names goes to the longer
-// one. External streams are numbered after the embedded ones, in path order,
+// one; videos that share that name ("Movie.mp4", "Movie.mkv") all get it. External streams are numbered after the embedded ones, in path order,
 // so indexes stay stable across scans.
 func attachSidecars(items []Item, subtitles []string) {
 	slices.Sort(subtitles)
 	for _, subtitle := range subtitles {
 		dir, name := path.Dir(subtitle), path.Base(subtitle)
 		name = strings.TrimSuffix(name, path.Ext(name))
-		best, bestLen, rest := -1, 0, ""
+		// Every video with the longest matching name gets the file, so
+		// "Movie.mp4" and "Movie.mkv" both get "Movie.en.srt". Case is
+		// ignored, as media folders often mix it.
+		matches, bestLen := []int{}, 0
 		for i := range items {
 			if path.Dir(items[i].Path) != dir {
 				continue
 			}
 			base := path.Base(items[i].Path)
 			base = strings.TrimSuffix(base, path.Ext(base))
-			if (name == base || strings.HasPrefix(name, base+".")) && len(base) > bestLen {
-				best, bestLen, rest = i, len(base), strings.TrimPrefix(strings.TrimPrefix(name, base), ".")
+			if len(name) < len(base) || !strings.EqualFold(name[:len(base)], base) || (len(name) > len(base) && name[len(base)] != '.') {
+				continue
+			}
+			if len(base) > bestLen {
+				matches, bestLen = matches[:0], len(base)
+			}
+			if len(base) == bestLen {
+				matches = append(matches, i)
 			}
 		}
-		if best < 0 || externalCount(items[best]) >= maxSidecarSubtitles {
-			continue
+		rest := strings.TrimPrefix(name[min(bestLen, len(name)):], ".")
+		for _, i := range matches {
+			if externalCount(items[i]) < maxSidecarSubtitles {
+				items[i].Streams = append(items[i].Streams, sidecarStream(items[i], subtitle, rest))
+			}
 		}
-		items[best].Streams = append(items[best].Streams, sidecarStream(items[best], subtitle, rest))
 	}
 }
 
@@ -155,7 +166,8 @@ func toWebVTT(data []byte, codec string) ([]byte, error) {
 	if !utf8.Valid(data) {
 		return nil, errors.New("subtitle file is not UTF-8")
 	}
-	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	// Old SRT files may end lines with a bare CR.
+	text := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", "\n")
 	if codec == "webvtt" {
 		if !strings.HasPrefix(text, "WEBVTT") {
 			return nil, errors.New("subtitle file is not WebVTT")

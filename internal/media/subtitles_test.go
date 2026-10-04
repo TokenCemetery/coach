@@ -150,3 +150,33 @@ func mustOpen(t *testing.T, name string) *os.File {
 	t.Cleanup(func() { _ = f.Close() })
 	return f
 }
+
+func TestSidecarMatchingIgnoresCaseAndSharesSameName(t *testing.T) {
+	items := []Item{
+		{ID: "a", Path: "dir/Movie.mp4", Streams: []Stream{{Index: 0, Type: "Video"}}},
+		{ID: "b", Path: "dir/Movie.mkv", Streams: []Stream{{Index: 0, Type: "Video"}, {Index: 1, Type: "Audio"}}},
+		{ID: "c", Path: "dir/MovieX.mp4"},
+	}
+	attachSidecars(items, []string{"dir/movie.EN.srt", "dir/Moviex.srt"})
+	for i, want := range []string{"1 dir/movie.EN.srt en", "2 dir/movie.EN.srt en", "0 dir/Moviex.srt "} {
+		got := ""
+		for _, s := range items[i].Streams {
+			if s.Path != "" {
+				got += strconv.Itoa(s.Index) + " " + s.Path + " " + s.Language
+			}
+		}
+		if got != want {
+			t.Errorf("%s: got %q, want %q", items[i].Path, got, want)
+		}
+	}
+}
+
+func TestBareCarriageReturnSeparatesCues(t *testing.T) {
+	got, err := toWebVTT([]byte("1\r00:00:01,000 --> 00:00:02,000\rOne\r\r2\r00:00:03,000 --> 00:00:04,000\rTwo\r"), "srt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nOne\n\n2\n00:00:03.000 --> 00:00:04.000\nTwo\n\n"; string(got) != want {
+		t.Fatalf("got %q", got)
+	}
+}
