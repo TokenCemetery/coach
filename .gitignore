@@ -603,3 +603,5 @@ FodyWeavers.xsd
 /data/
 /bin/
 /coverage.out
+/e2e/allure-results/
+/e2e/allure-report/
