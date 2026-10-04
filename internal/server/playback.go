@@ -145,6 +145,9 @@ func (s *Server) streamVideo(w http.ResponseWriter, r *http.Request, token strin
 	}
 	file, err := s.media.Open(item)
 	if err != nil {
+		// A catalogued file that cannot be opened usually means an unmounted
+		// or moved library; the client only shows a generic playback error.
+		slog.Warn("Media file unavailable", "item", item.ID)
 		fail(w, 404, "MediaUnavailable")
 		return
 	}
@@ -163,6 +166,9 @@ func (s *Server) downloadItem(w http.ResponseWriter, r *http.Request, token stri
 	}
 	file, err := s.media.Open(item)
 	if err != nil {
+		// A catalogued file that cannot be opened usually means an unmounted
+		// or moved library; the client only shows a generic playback error.
+		slog.Warn("Media file unavailable", "item", item.ID)
 		fail(w, 404, "MediaUnavailable")
 		return
 	}
