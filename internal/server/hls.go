@@ -255,4 +255,25 @@ func (s *Server) hlsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /videos/{item}/master.m3u8", s.protect(s.masterPlaylist))
 	mux.HandleFunc("GET /videos/{item}/main.m3u8", s.protect(s.mediaPlaylist))
 	mux.HandleFunc("GET /videos/{item}/hls1/{playlist}/{segment}", s.protect(s.hlsSegment))
+	mux.HandleFunc("DELETE /videos/activeencodings", s.protect(s.stopEncodings))
+	mux.HandleFunc("POST /videos/activeencodings/delete", s.protect(s.stopEncodings))
+}
+
+// stopEncodings ends the caller's HLS session for PlaySessionId, or all of
+// the caller's sessions without one. Emby Web sends it when playback of a
+// transcoded stream stops.
+func (s *Server) stopEncodings(w http.ResponseWriter, r *http.Request, _ string, session state.Session) {
+	playSession := value(r, "PlaySessionId")
+	if len(playSession) > 128 {
+		fail(w, 400, "InvalidRequest")
+		return
+	}
+	if s.hls != nil {
+		if playSession == "" {
+			s.hls.StopOwner(session.ID)
+		} else {
+			s.hls.Stop(playSession, session.ID)
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
