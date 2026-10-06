@@ -36,6 +36,11 @@ func sidecarCodec(ext string) string {
 // "Movie.mp4". A file whose name extends two videos' names goes to the longer
 // one; videos that share that name ("Movie.mp4", "Movie.mkv") all get it. External streams are numbered after the embedded ones, in path order,
 // so indexes stay stable across scans.
+// embeddedStreams drops sidecar streams, which attachSidecars appends.
+func embeddedStreams(streams []Stream) []Stream {
+	return slices.DeleteFunc(slices.Clone(streams), func(s Stream) bool { return s.Path != "" })
+}
+
 func attachSidecars(items []Item, subtitles []string) {
 	slices.Sort(subtitles)
 	for _, subtitle := range subtitles {

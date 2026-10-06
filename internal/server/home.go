@@ -101,7 +101,7 @@ func (s *Server) sectionItems(w http.ResponseWriter, r *http.Request, token stri
 			}
 		}
 		slices.SortFunc(latest, func(a, b *media.Item) int {
-			if c := b.Modified.Compare(a.Modified); c != 0 {
+			if c := b.Added.Compare(a.Added); c != 0 {
 				return c
 			}
 			return strings.Compare(a.ID, b.ID)

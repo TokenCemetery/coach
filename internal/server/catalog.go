@@ -406,7 +406,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 		for _, key := range sortKeys {
 			switch key {
 			case "datecreated":
-				comparison = a.Modified.Compare(b.Modified)
+				comparison = a.Added.Compare(b.Added)
 			case "dateplayed":
 				comparison = lastPlayed(a.ID).Compare(lastPlayed(b.ID))
 			case "datelastsearched":

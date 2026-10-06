@@ -173,7 +173,7 @@ func (s *Server) childCount(id string) int {
 func (s *Server) movieDTO(item media.Item, serverID string, items map[string]state.ItemState, token string) object {
 	catalog := s.catalog()
 	dto := baseFields(item.ID, item.Name, item.Type(), serverID)
-	dto["DateCreated"] = embyDate(item.Modified)
+	dto["DateCreated"] = embyDate(item.Added)
 	dto["DateModified"] = embyDate(item.Modified)
 	dto["IsFolder"] = item.IsFolder()
 	dto["ParentId"] = catalog.Parent(item)

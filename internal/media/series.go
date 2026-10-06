@@ -62,9 +62,14 @@ func (c *Catalog) groupEpisodes() {
 			{ID: seriesID, Name: seriesName, Kind: "Series", Path: seriesPath, ParentID: c.SeriesLibraryID()},
 			{ID: seasonID, Name: "Season " + strconv.Itoa(season), Kind: "Season", Path: seasonPath, ParentID: seriesID, SeriesID: seriesID, SeriesName: seriesName, SeasonNumber: season},
 		} {
-			folder.Modified = item.Modified
-			if old, exists := folders[folder.ID]; exists && old.Modified.After(folder.Modified) {
-				folder.Modified = old.Modified
+			folder.Modified, folder.Added = item.Modified, item.Added
+			if old, exists := folders[folder.ID]; exists {
+				if old.Modified.After(folder.Modified) {
+					folder.Modified = old.Modified
+				}
+				if old.Added.After(folder.Added) {
+					folder.Added = old.Added
+				}
 			}
 			folders[folder.ID] = folder
 		}
