@@ -66,7 +66,7 @@ func folderUserData() object {
 
 // folderEpisodes lists the episodes of a series or season.
 func (s *Server) folderEpisodes(folder media.Item) []media.Item {
-	return s.media.Episodes(folder.ID)
+	return s.catalog().Episodes(folder.ID)
 }
 
 // folderPlayed reports a series or season as played once all its episodes
@@ -133,7 +133,7 @@ func (s *Server) rootFolderDTO(serverID string) object {
 // served without Subviews breaks the screen outright.
 func (s *Server) collectionDTO(id, serverID string, detail bool) object {
 	name, collectionType, subview := "Movies", "movies", "movies"
-	if id == s.media.SeriesLibraryID() {
+	if id == s.catalog().SeriesLibraryID() {
 		name, collectionType, subview = "TV Shows", "tvshows", "series"
 	}
 	dto := baseFields(id, name, "CollectionFolder", serverID)
@@ -156,29 +156,31 @@ func (s *Server) libraryCount() int {
 }
 
 func (s *Server) libraryIDs() []string {
-	if s.media == nil {
+	catalog := s.catalog()
+	if catalog == nil {
 		return nil
 	}
-	if len(s.media.Folders) > 0 {
-		return []string{s.media.ID, s.media.SeriesLibraryID()}
+	if len(catalog.Folders) > 0 {
+		return []string{catalog.ID, catalog.SeriesLibraryID()}
 	}
-	return []string{s.media.ID}
+	return []string{catalog.ID}
 }
 
 func (s *Server) childCount(id string) int {
-	return s.media.ChildCount(id)
+	return s.catalog().ChildCount(id)
 }
 
 func (s *Server) movieDTO(item media.Item, serverID string, items map[string]state.ItemState, token string) object {
+	catalog := s.catalog()
 	dto := baseFields(item.ID, item.Name, item.Type(), serverID)
 	dto["DateCreated"] = embyDate(item.Modified)
 	dto["DateModified"] = embyDate(item.Modified)
 	dto["IsFolder"] = item.IsFolder()
-	dto["ParentId"] = s.media.Parent(item)
+	dto["ParentId"] = catalog.Parent(item)
 	dto["GenreItems"] = []any{}
 	dto["TagItems"] = []any{}
 	dto["UserData"] = itemUserData(items[item.ID], item.RunTimeTicks)
-	if info, found := s.media.PrimaryImage(item); found {
+	if info, found := catalog.PrimaryImage(item); found {
 		if tag := s.store.ImageTag(token, item.ID, info.Revision); tag != "" {
 			dto["ImageTags"] = object{"Primary": tag}
 			dto["PrimaryImageAspectRatio"] = float64(info.Width) / float64(info.Height)

@@ -43,7 +43,7 @@ func (s *Server) homeSections(serverID, language string) []object {
 	}
 	for _, id := range s.libraryIDs() {
 		name, collectionType := translate(language, "HeaderLatestMovies"), "movies"
-		if id == s.media.SeriesLibraryID() {
+		if id == s.catalog().SeriesLibraryID() {
 			name, collectionType = translate(language, "HeaderLatestEpisodes"), "tvshows"
 		}
 		latest := homeSection("latestmedia_"+id, name, "latestmedia",
@@ -67,6 +67,7 @@ func (s *Server) homeSections(serverID, language string) []object {
 // build a query per home row itself: it asks the server to fill each section it
 // was given, so every section id advertised by homeSections must be answerable.
 func (s *Server) sectionItems(w http.ResponseWriter, r *http.Request, token string) {
+	catalog := s.catalog()
 	section := strings.ToLower(r.PathValue("section"))
 	limit := 12
 	if text := r.URL.Query().Get("Limit"); text != "" {
@@ -92,11 +93,11 @@ func (s *Server) sectionItems(w http.ResponseWriter, r *http.Request, token stri
 	case section == "resumeaudio":
 		// Coach serves no audio library, so this row is always empty.
 	case strings.HasPrefix(section, "latestmedia_") && slices.Contains(s.libraryIDs(), strings.TrimPrefix(section, "latestmedia_")):
-		series := strings.TrimPrefix(section, "latestmedia_") == s.media.SeriesLibraryID()
-		latest := make([]*media.Item, 0, len(s.media.Items))
-		for i := range s.media.Items {
-			if !snapshot.User.Items[s.media.Items[i].ID].Played && (s.media.Items[i].Type() == "Episode") == series {
-				latest = append(latest, &s.media.Items[i])
+		series := strings.TrimPrefix(section, "latestmedia_") == catalog.SeriesLibraryID()
+		latest := make([]*media.Item, 0, len(catalog.Items))
+		for i := range catalog.Items {
+			if !snapshot.User.Items[catalog.Items[i].ID].Played && (catalog.Items[i].Type() == "Episode") == series {
+				latest = append(latest, &catalog.Items[i])
 			}
 		}
 		slices.SortFunc(latest, func(a, b *media.Item) int {

@@ -50,6 +50,7 @@ func member(list, value string) bool {
 }
 
 func (s *Server) catalogRoutes(mux *http.ServeMux) {
+	catalog := s.catalog()
 	mux.HandleFunc("GET /users/{user}/views", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		items := []any{}
 		serverID := s.store.Snapshot().ServerID
@@ -66,9 +67,9 @@ func (s *Server) catalogRoutes(mux *http.ServeMux) {
 	for _, path := range []string{"/items/{item}", "/users/{user}/items/{item}"} {
 		mux.HandleFunc("GET "+path, s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 			id := r.PathValue("item")
-			if s.media != nil {
+			if catalog != nil {
 				snapshot := s.store.Snapshot()
-				if id == s.media.ID || (len(s.media.Folders) > 0 && id == s.media.SeriesLibraryID()) {
+				if id == catalog.ID || (len(catalog.Folders) > 0 && id == catalog.SeriesLibraryID()) {
 					respond(w, 200, s.collectionDTO(id, snapshot.ServerID, true))
 					return
 				}
@@ -192,6 +193,7 @@ func (s *Server) reportSearched(w http.ResponseWriter, r *http.Request, token st
 }
 
 func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resume bool) {
+	catalog := s.catalog()
 	token, _ := requestToken(r) // Callers have already authenticated this request.
 	typesOnly := r.URL.Path == "/itemtypes"
 	query, err := catalogQuery(r)
@@ -316,33 +318,33 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 	// Select and paginate metadata before allocating response DTOs.
 	items := []*media.Item{}
 	isCollection := func(item *media.Item) bool {
-		return s.media != nil && (item.ID == s.media.ID || item.ID == s.media.SeriesLibraryID())
+		return catalog != nil && (item.ID == catalog.ID || item.ID == catalog.SeriesLibraryID())
 	}
-	if s.media != nil {
+	if catalog != nil {
 		parent := query["parentid"]
 		root := parent == "" || parent == "root"
 		if root && query["recursive"] != "true" && !latest && query["ids"] == "" {
-			items = append(items, &media.Item{ID: s.media.ID, Name: "Movies"})
-			if len(s.media.Folders) > 0 {
-				items = append(items, &media.Item{ID: s.media.SeriesLibraryID(), Name: "TV Shows"})
+			items = append(items, &media.Item{ID: catalog.ID, Name: "Movies"})
+			if len(catalog.Folders) > 0 {
+				items = append(items, &media.Item{ID: catalog.SeriesLibraryID(), Name: "TV Shows"})
 			}
 		} else {
-			items = make([]*media.Item, 0, len(s.media.Items)+1)
-			for _, candidates := range [][]media.Item{s.media.Items, s.media.Folders} {
+			items = make([]*media.Item, 0, len(catalog.Items)+1)
+			for _, candidates := range [][]media.Item{catalog.Items, catalog.Folders} {
 				for i := range candidates {
 					item := &candidates[i]
 					if (latest || resume) && item.IsFolder() {
 						continue
 					}
-					if root || s.media.Parent(*item) == parent || ((query["recursive"] == "true" || latest || resume) && (item.SeriesID == parent || (parent == s.media.SeriesLibraryID() && item.Type() != "Movie"))) {
+					if root || catalog.Parent(*item) == parent || ((query["recursive"] == "true" || latest || resume) && (item.SeriesID == parent || (parent == catalog.SeriesLibraryID() && item.Type() != "Movie"))) {
 						items = append(items, item)
 					}
 				}
 			}
 			if query["ids"] != "" && root {
-				items = append(items, &media.Item{ID: s.media.ID, Name: "Movies"})
-				if len(s.media.Folders) > 0 {
-					items = append(items, &media.Item{ID: s.media.SeriesLibraryID(), Name: "TV Shows"})
+				items = append(items, &media.Item{ID: catalog.ID, Name: "Movies"})
+				if len(catalog.Folders) > 0 {
+					items = append(items, &media.Item{ID: catalog.SeriesLibraryID(), Name: "TV Shows"})
 				}
 			}
 		}

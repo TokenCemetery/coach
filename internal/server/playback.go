@@ -43,6 +43,7 @@ func bitrate(item media.Item) int64 {
 }
 
 func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+	catalog := s.catalog()
 	item, found := s.findItem(r.PathValue("item"))
 	if !found || item.IsFolder() {
 		fail(w, 404, "NotFound")
@@ -75,7 +76,7 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 	// Deliverable subtitles are fetched by the player beside the direct
 	// stream. Like the stream URL, theirs carries the token for a <track>.
 	for i, stream := range item.Streams {
-		if s.media.SubtitleDeliverable(item, stream.Index) {
+		if catalog.SubtitleDeliverable(item, stream.Index) {
 			streams[i]["DeliveryMethod"] = "External"
 			streams[i]["DeliveryFormat"] = "vtt"
 			streams[i]["IsExternalUrl"] = false
@@ -87,7 +88,7 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 	// implemented. A selected subtitle Coach cannot deliver is dropped and the
 	// video plays without it, rather than refusing playback.
 	subtitle := -1
-	deliverable := func(index int) bool { return s.media.SubtitleDeliverable(item, index) }
+	deliverable := func(index int) bool { return catalog.SubtitleDeliverable(item, index) }
 	switch {
 	case body.SubtitleStreamIndex != nil && *body.SubtitleStreamIndex >= 0:
 		subtitle = int(*body.SubtitleStreamIndex)
@@ -148,7 +149,7 @@ func (s *Server) streamSubtitle(w http.ResponseWriter, r *http.Request, token st
 		fail(w, 404, "NotFound")
 		return
 	}
-	text, err := s.media.OpenSubtitle(r.Context(), item, index)
+	text, err := s.catalog().OpenSubtitle(r.Context(), item, index)
 	if errors.Is(err, os.ErrNotExist) {
 		fail(w, 404, "NotFound")
 		return
@@ -186,10 +187,11 @@ func directStreamURL(item media.Item, deviceID, playSession, token string) strin
 }
 
 func (s *Server) findItem(id string) (media.Item, bool) {
-	if s.media == nil || id == "" {
+	catalog := s.catalog()
+	if catalog == nil || id == "" {
 		return media.Item{}, false
 	}
-	for _, items := range [][]media.Item{s.media.Items, s.media.Folders} {
+	for _, items := range [][]media.Item{catalog.Items, catalog.Folders} {
 		for _, item := range items {
 			if item.ID == id {
 				return item, true
@@ -213,7 +215,7 @@ func (s *Server) streamVideo(w http.ResponseWriter, r *http.Request, token strin
 		fail(w, 404, "NotFound")
 		return
 	}
-	file, err := s.media.Open(item)
+	file, err := s.catalog().Open(item)
 	if err != nil {
 		// A catalogued file that cannot be opened usually means an unmounted
 		// or moved library; the client only shows a generic playback error.
@@ -234,7 +236,7 @@ func (s *Server) downloadItem(w http.ResponseWriter, r *http.Request, token stri
 		fail(w, 404, "NotFound")
 		return
 	}
-	file, err := s.media.Open(item)
+	file, err := s.catalog().Open(item)
 	if err != nil {
 		// A catalogued file that cannot be opened usually means an unmounted
 		// or moved library; the client only shows a generic playback error.
@@ -477,6 +479,7 @@ func (s *Server) hideFromResume(w http.ResponseWriter, r *http.Request, token st
 // each started series' next episode dated by the series' last watch. Most
 // recent first.
 func (s *Server) resumeItems(limit int, token string) []object {
+	catalog := s.catalog()
 	snapshot := s.store.Snapshot()
 	serverID := snapshot.ServerID
 	candidates := []*media.Item{}
@@ -488,9 +491,9 @@ func (s *Server) resumeItems(limit int, token string) []object {
 		candidates = append(candidates, c.next)
 		played[c.next.ID] = c.lastPlayed
 	}
-	if s.media != nil {
-		for i := range s.media.Items {
-			item := &s.media.Items[i]
+	if catalog != nil {
+		for i := range catalog.Items {
+			item := &catalog.Items[i]
 			st := snapshot.User.Items[item.ID]
 			if !resumable(st, item.RunTimeTicks) {
 				continue

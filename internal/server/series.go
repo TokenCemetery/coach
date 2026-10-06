@@ -44,7 +44,7 @@ func (s *Server) seriesRoutes(mux *http.ServeMux) {
 					return
 				}
 				// Season 00 holds specials; exclude seasons on the other side of the filter.
-				for _, folder := range s.media.Folders {
+				for _, folder := range s.catalog().Folders {
 					if folder.Type() == "Season" && folder.SeriesID == series.ID && (folder.SeasonNumber == 0) != (special == "true") {
 						excluded += "," + folder.ID
 					}
@@ -118,16 +118,17 @@ type nextUpCandidate struct {
 // the furthest played one, most recently watched series first. seriesID and
 // parent narrow the series; empty values select all.
 func (s *Server) nextUpEpisodes(states map[string]state.ItemState, seriesID, parent string) []nextUpCandidate {
+	catalog := s.catalog()
 	candidates := []nextUpCandidate{}
-	if s.media == nil {
+	if catalog == nil {
 		return candidates
 	}
 	episodes := map[string][]*media.Item{}
-	for i := range s.media.Items {
-		item := &s.media.Items[i]
+	for i := range catalog.Items {
+		item := &catalog.Items[i]
 		if item.Type() != "Episode" || item.SeasonNumber == 0 ||
 			(seriesID != "" && item.SeriesID != seriesID) ||
-			(parent != "" && parent != rootID && parent != s.media.SeriesLibraryID() && parent != item.SeriesID) {
+			(parent != "" && parent != rootID && parent != catalog.SeriesLibraryID() && parent != item.SeriesID) {
 			continue
 		}
 		episodes[item.SeriesID] = append(episodes[item.SeriesID], item)

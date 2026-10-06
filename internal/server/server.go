@@ -29,7 +29,7 @@ type Server struct {
 	name        string
 	web         http.Handler
 	logins      loginLimit
-	media       *media.Catalog
+	media       atomic.Pointer[media.Catalog]
 	sockets     atomic.Int64
 	socketMu    sync.Mutex
 	connections map[*socket]struct{}
@@ -39,7 +39,21 @@ type Server struct {
 
 // New creates a Server. web and catalog may be nil.
 func New(store *state.Store, name string, web http.Handler, catalog *media.Catalog) *Server {
-	return &Server{store: store, name: name, web: web, media: catalog, logins: loginLimit{active: make(chan struct{}, 2)}, connections: make(map[*socket]struct{})}
+	s := &Server{store: store, name: name, web: web, logins: loginLimit{active: make(chan struct{}, 2)}, connections: make(map[*socket]struct{})}
+	s.media.Store(catalog)
+	return s
+}
+
+// catalog returns the current catalog snapshot, which may be nil. Callers
+// take it once and use only that snapshot, since a rescan can replace it.
+func (s *Server) catalog() *media.Catalog {
+	return s.media.Load()
+}
+
+// SetCatalog publishes a rescanned catalog. Requests already running keep the
+// snapshot they took.
+func (s *Server) SetCatalog(catalog *media.Catalog) {
+	s.media.Store(catalog)
 }
 
 func respond(w http.ResponseWriter, status int, data any) {
