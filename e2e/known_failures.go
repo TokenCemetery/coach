@@ -12,7 +12,7 @@ type knownFailure struct {
 func (k knownFailure) Link() string { return strconv.Itoa(k.Issue) }
 
 var (
-	hlsDelivery          = knownFailure{21, "remux and HLS delivery are not implemented"}
+	hlsDelivery          = knownFailure{21, "only video remux to HLS is implemented: no audio-only HLS, live or subtitle playlists, or active encodings"}
 	transcoding          = knownFailure{22, "transcoding is not implemented"}
 	subtitles            = knownFailure{24, "audio and subtitle track selection and subtitle delivery are not implemented"}
 	nextUpAndCollections = knownFailure{40, "missing episodes and collections are not implemented"}
@@ -30,7 +30,6 @@ var (
 // Grouped by Emby service; generated from the first run and edited by hand.
 var knownFailures = map[string]knownFailure{
 	// Behavior checks
-	"hls-master-playlist": hlsDelivery,
 	// ActivityLogService
 	"getSystemActivitylogEntries": administration,
 	// ArtistsService
@@ -85,19 +84,14 @@ var knownFailures = map[string]knownFailure{
 	"postDisplaypreferencesByDisplaypreferencesid": notOfferedByWeb,
 	// DynamicHlsService
 	"getAudioByIdHls1ByPlaylistidBySegmentidBySegmentcontainer": hlsDelivery,
-	"getAudioByIdLiveM3u8":   hlsDelivery,
-	"getAudioByIdMainM3u8":   hlsDelivery,
-	"getAudioByIdMasterM3u8": hlsDelivery,
-	"getVideosByIdHls1ByPlaylistidBySegmentidBySegmentcontainer": hlsDelivery,
-	"getVideosByIdLiveM3u8":                                       hlsDelivery,
-	"getVideosByIdLiveSubtitlesM3u8":                              hlsDelivery,
-	"getVideosByIdMainM3u8":                                       hlsDelivery,
-	"getVideosByIdMasterM3u8":                                     hlsDelivery,
-	"getVideosByIdSubtitlesM3u8":                                  hlsDelivery,
-	"headAudioByIdHls1ByPlaylistidBySegmentidBySegmentcontainer":  hlsDelivery,
-	"headAudioByIdMasterM3u8":                                     hlsDelivery,
-	"headVideosByIdHls1ByPlaylistidBySegmentidBySegmentcontainer": hlsDelivery,
-	"headVideosByIdMasterM3u8":                                    hlsDelivery,
+	"getAudioByIdLiveM3u8":                                       hlsDelivery,
+	"getAudioByIdMainM3u8":                                       hlsDelivery,
+	"getAudioByIdMasterM3u8":                                     hlsDelivery,
+	"getVideosByIdLiveM3u8":                                      hlsDelivery,
+	"getVideosByIdLiveSubtitlesM3u8":                             hlsDelivery,
+	"getVideosByIdSubtitlesM3u8":                                 hlsDelivery,
+	"headAudioByIdHls1ByPlaylistidBySegmentidBySegmentcontainer": hlsDelivery,
+	"headAudioByIdMasterM3u8":                                    hlsDelivery,
 	// EncodingInfoService
 	"getEncodingCodecconfigurationDefaults": transcoding,
 	"getEncodingCodecinformationVideo":      transcoding,

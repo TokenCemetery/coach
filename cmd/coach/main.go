@@ -9,10 +9,13 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/TokenCemetery/coach/internal/hls"
 	"github.com/TokenCemetery/coach/internal/media"
 	"github.com/TokenCemetery/coach/internal/server"
 	"github.com/TokenCemetery/coach/internal/state"
@@ -98,6 +101,22 @@ func run() error {
 	}
 	api := server.New(s, *name, web, catalog)
 	defer api.Close()
+	if catalog != nil {
+		ffmpeg, ffmpegErr := exec.LookPath("ffmpeg")
+		ffprobe, ffprobeErr := exec.LookPath("ffprobe")
+		if ffmpegErr == nil && ffprobeErr == nil {
+			// Deferred after api.Close, so it runs before it: after the HTTP
+			// server has shut down, jobs are killed and segments removed.
+			remux, err := hls.NewManager(ffmpeg, ffprobe, filepath.Join(*data, "transcode"))
+			if err != nil {
+				return fmt.Errorf("prepare HLS directory: %w", err)
+			}
+			defer remux.Close()
+			api.SetHLS(remux)
+		} else {
+			slog.Info("FFmpeg not found; HLS remux is disabled")
+		}
+	}
 	if catalog != nil {
 		// Registered before serving: an unhandled SIGHUP would stop Coach.
 		hangup := make(chan os.Signal, 1)

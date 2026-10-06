@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/TokenCemetery/coach/internal/hls"
 	"github.com/TokenCemetery/coach/internal/media"
 	"github.com/TokenCemetery/coach/internal/state"
 )
@@ -30,6 +31,7 @@ type Server struct {
 	web         http.Handler
 	logins      loginLimit
 	media       atomic.Pointer[media.Catalog]
+	hls         *hls.Manager
 	sockets     atomic.Int64
 	socketMu    sync.Mutex
 	connections map[*socket]struct{}
@@ -317,6 +319,7 @@ func (s *Server) Handler() http.Handler {
 	s.catalogRoutes(mux)
 	s.homeRoutes(mux)
 	s.playbackRoutes(mux)
+	s.hlsRoutes(mux)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { fail(w, 404, "NotFound") })
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Coach-Version", Version)

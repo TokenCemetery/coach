@@ -26,6 +26,9 @@ func (s *Server) removeSocket(sock *socket) {
 }
 
 func (s *Server) disconnectSession(id string) {
+	if s.hls != nil {
+		s.hls.StopOwner(id)
+	}
 	s.socketMu.Lock()
 	defer s.socketMu.Unlock()
 	for sock := range s.connections {

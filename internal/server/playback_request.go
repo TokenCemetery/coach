@@ -114,9 +114,17 @@ func (p playbackRequest) supportsDirectStream(item media.Item, video, audio *med
 	if video == nil || (p.EnableDirectStream != nil && !*p.EnableDirectStream) {
 		return false
 	}
-	if p.MaxAudioChannels != nil && *p.MaxAudioChannels > 0 && audio != nil && (audio.Channels <= 0 || int64(audio.Channels) > *p.MaxAudioChannels) {
+	if audio != nil && !p.audioChannelsAllowed(audio) {
 		return false
 	}
+	return p.withinBitrate(item) && supportsProfile(p.DeviceProfile, item, video, audio)
+}
+
+func (p playbackRequest) audioChannelsAllowed(audio *media.Stream) bool {
+	return p.MaxAudioChannels == nil || *p.MaxAudioChannels <= 0 || (audio.Channels > 0 && int64(audio.Channels) <= *p.MaxAudioChannels)
+}
+
+func (p playbackRequest) withinBitrate(item media.Item) bool {
 	limits := []*int64{p.MaxStreamingBitrate}
 	if p.DeviceProfile != nil {
 		limits = append(limits, p.DeviceProfile.MaxStreamingBitrate)
@@ -126,5 +134,5 @@ func (p playbackRequest) supportsDirectStream(item media.Item, video, audio *med
 			return false
 		}
 	}
-	return supportsProfile(p.DeviceProfile, item, video, audio)
+	return true
 }

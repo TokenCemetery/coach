@@ -119,6 +119,8 @@ func (c *Contract) value(p Param, path string, ids Fixtures) string {
 		return "stream.mp4"
 	case "SegmentContainer":
 		return "ts"
+	case "SegmentId":
+		return "0"
 	case "Type":
 		if strings.Contains(path, "/Images/") {
 			return "Primary"

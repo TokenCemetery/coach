@@ -19,6 +19,7 @@ type deviceProfile struct {
 	DirectPlayProfiles  []directPlayProfile
 	CodecProfiles       []codecProfile
 	ContainerProfiles   []codecProfile
+	TranscodingProfiles []transcodingProfile
 }
 
 type codecProfile struct {
@@ -91,6 +92,12 @@ func supportsProfile(profile *deviceProfile, item media.Item, video, audio *medi
 			return false
 		}
 	}
+	return codecProfilesMatch(profile, item, video, audio)
+}
+
+// codecProfilesMatch checks the profile's video and video-audio codec
+// conditions; a nil audio skips the audio ones.
+func codecProfilesMatch(profile *deviceProfile, item media.Item, video, audio *media.Stream) bool {
 	for _, p := range profile.CodecProfiles {
 		stream := video
 		switch strings.ToLower(p.Type) {

@@ -101,9 +101,22 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 		subtitle = -1
 	}
 	direct := body.supportsDirectStream(item, video, audio)
+	// Remux to HLS when the client cannot take the file as it is.
+	var transcoding string
+	remuxBusy := false
+	if !direct && s.hls != nil {
+		if videoCodec, audioCodec, channels, ok := body.remuxCodecs(item, video, audio); ok {
+			if s.hls.Available(playSession) {
+				transcoding = transcodingURL(item, session.DeviceID, playSession, token, videoCodec, audioCodec, audio, channels)
+				s.hls.Prepare(remuxSource(catalog, item, video))
+			} else {
+				remuxBusy = true
+			}
+		}
+	}
 	source["SupportsDirectPlay"] = false
 	source["SupportsDirectStream"] = direct
-	source["SupportsTranscoding"] = false
+	source["SupportsTranscoding"] = transcoding != ""
 	source["ItemId"] = item.ID
 	source["Formats"] = []string{}
 	source["RequiredHttpHeaders"] = object{}
@@ -113,13 +126,20 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 		source["DefaultAudioStreamIndex"] = audio.Index
 	}
 	source["DefaultSubtitleStreamIndex"] = -1
-	if subtitle >= 0 && direct {
+	if subtitle >= 0 && (direct || transcoding != "") {
 		source["DefaultSubtitleStreamIndex"] = subtitle
 	}
 	response := object{"MediaSources": []object{source}, "PlaySessionId": playSession}
-	if direct {
+	switch {
+	case direct:
 		source["DirectStreamUrl"] = directStreamURL(item, session.DeviceID, playSession, token)
-	} else {
+	case transcoding != "":
+		source["TranscodingUrl"] = transcoding
+		source["TranscodingSubProtocol"] = "hls"
+		source["TranscodingContainer"] = "ts"
+	case remuxBusy:
+		response["ErrorCode"] = "RateLimitExceeded"
+	default:
 		response["ErrorCode"] = "NoCompatibleStream"
 	}
 	respond(w, 200, response)
@@ -275,6 +295,9 @@ func (s *Server) reportPlaystate(event string) authenticated {
 		if len(body.PlaySessionId) > 128 {
 			fail(w, 400, "InvalidRequest")
 			return
+		}
+		if event == "stop" && body.PlaySessionId != "" && s.hls != nil {
+			s.hls.Stop(body.PlaySessionId, session.ID)
 		}
 		item, found := s.findItem(body.ItemId)
 		if !found || item.IsFolder() {
@@ -545,13 +568,13 @@ func (s *Server) playbackRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /videos/{item}/{source}/subtitles/{index}/{file}", s.protect(s.streamSubtitle))
 	mux.HandleFunc("GET /videos/{item}/{source}/subtitles/{index}/{start}/{file}", s.protect(s.streamSubtitle))
 	for _, prefix := range []string{"/videos", "/audio"} {
+		// A GET pattern also serves HEAD.
 		mux.HandleFunc("GET "+prefix+"/{item}/{stream}", s.protect(s.streamVideo))
-		mux.HandleFunc("HEAD "+prefix+"/{item}/{stream}", s.protect(s.streamVideo))
 	}
 }
 
-// streamRoute rejects anything but the direct stream endpoint. Coach does not
-// transcode, so the HLS and segment routes are deliberately not served.
+// streamRoute rejects anything but the direct stream endpoint; HLS has its
+// own routes (hls.go).
 func streamRoute(name string) bool {
 	return strings.TrimSuffix(name, path.Ext(name)) == "stream"
 }
