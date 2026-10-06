@@ -37,6 +37,23 @@ unset coach_password
 
 Другие параметры: `-listen` (по умолчанию `127.0.0.1:8097`), `-data` (`./data`), `-name` (`Coach`). Слушатель по умолчанию локальный; TLS и работа за reverse proxy ещё не настроены.
 
+### Контейнер
+
+[Dockerfile](Dockerfile) собирает образ: статический `coach` на Alpine 3.24 с FFmpeg/FFprobe 8.1 (протокол `fd`, `libx264`, `aac`). Процесс работает от пользователя `coach` (UID 10001), состояние хранится в томе `/data`, внутри контейнера слушается `:8097`. Пример для Podman; Docker принимает те же команды:
+
+```sh
+podman build -t coach .
+read -rs 'coach_password?Пароль нового пользователя Coach: '
+printf '\n'
+printf '%s\n' "$coach_password" | podman run --rm -i -v coach-data:/data coach -init -username viewer
+unset coach_password
+podman run -d --name coach -p 127.0.0.1:8097:8097 -v coach-data:/data -v /absolute/path/to/media:/media:ro coach -listen :8097 -media-dir /media -web-upstream http://192.168.1.11:8096
+```
+
+Аргументы после имени образа заменяют `-listen :8097`, поэтому `-listen` указывается явно; `-data /data` задан в образе. Для `-web-dir` каталог Emby Web монтируется отдельно (например, `-v /absolute/path/to/emby-webui:/web:ro` и `-web-dir /web`). Пересканирование: `podman kill -s HUP coach`. Ограничение частоты входа считает адрес клиента так, как его видит контейнер; при пробросе порта это может быть общий адрес шлюза.
+
+`scripts/check-container.sh IMAGE` проверяет образ: `-init`, сканирование MKV H.264 + AC3 и remux в HLS (FFprobe читает `h264` + `aac`), остановку с кодом 0. По умолчанию используется Docker, Podman — через `CONTAINER=podman`. Нужны `curl` и `jq`. Workflow [container.yml](.github/workflows/container.yml) собирает образ и запускает эту проверку на linux/amd64 и linux/arm64 при push в `main` и в pull request.
+
 ## Каталог фильмов и сериалов
 
 Для сканирования указать одну тестовую папку и установить FFprobe с поддержкой протокола `fd`:
