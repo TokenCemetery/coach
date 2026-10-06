@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
 	"testing"
@@ -186,14 +187,50 @@ func TestMalformedRequestsAndLimits(t *testing.T) {
 	expectStatus(t, request(h, "POST", "/Users/AuthenticateByName", "text/plain", `{"Username":"viewer","Pw":"whatever"}`, ""), 415)
 	expectStatus(t, request(h, "POST", "/Users/"+s.Snapshot().User.ID+"/Configuration/Partial", "application/json", `{"LatestItemsExcludes":null}`, token), 400)
 	expectStatus(t, request(h, "OPTIONS", "/Users/AuthenticateByName", "", "", ""), 204)
-	// Cheap malformed attempts still count toward the bounded login window.
-	for range 20 {
+	// Cheap malformed attempts still count toward the address's login window.
+	// The earlier login and the 415 above came from the same address.
+	for range addressLogins - 2 {
 		request(h, "POST", "/Users/AuthenticateByName", "application/json", "{", "")
 	}
 	w := request(h, "POST", "/Users/AuthenticateByName", "application/json", "{", "")
 	expectStatus(t, w, 429)
 	if w.Header().Get("Retry-After") == "" {
 		t.Fatal("missing retry interval")
+	}
+	// The flood does not lock out the owner on another address (#59).
+	r := httptest.NewRequestWithContext(context.Background(), "POST", "/Users/AuthenticateByName", strings.NewReader(`{"Username":"viewer","Pw":"`+testPassword+`"}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.RemoteAddr = "192.0.2.2:1234"
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	expectStatus(t, w, 200)
+}
+
+func TestLoginLimit(t *testing.T) {
+	var l loginLimit
+	for i := range globalLogins {
+		addr := netip.AddrFrom4([4]byte{10, 0, byte(i / 256), byte(i % 256)})
+		if !l.allow(addr) {
+			t.Fatalf("attempt %d refused", i)
+		}
+	}
+	if l.allow(netip.MustParseAddr("10.1.0.1")) {
+		t.Fatal("global cap not applied")
+	}
+	if len(l.addresses) != globalLogins {
+		t.Fatalf("recorded %d addresses", len(l.addresses))
+	}
+	for _, tc := range []struct{ remote, want string }{
+		{"192.0.2.1:80", "192.0.2.1"},
+		{"[::ffff:192.0.2.1]:80", "192.0.2.1"},
+		{"[2001:db8:1:2:aaaa::1]:80", "2001:db8:1:2::"},
+		{"bad", "invalid IP"},
+	} {
+		r := httptest.NewRequestWithContext(context.Background(), "GET", "/", nil)
+		r.RemoteAddr = tc.remote
+		if got := clientAddress(r).String(); got != tc.want {
+			t.Errorf("%s: %s", tc.remote, got)
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -145,8 +146,8 @@ func readFields(w http.ResponseWriter, r *http.Request) (map[string]string, bool
 
 // verifying applies the login limit to any request that checks a password. It
 // returns false after writing 429; otherwise release must be called.
-func (s *Server) verifying(w http.ResponseWriter) (release func(), ok bool) {
-	if !s.logins.allow() {
+func (s *Server) verifying(w http.ResponseWriter, r *http.Request) (release func(), ok bool) {
+	if !s.logins.allow(clientAddress(r)) {
 		w.Header().Set("Retry-After", "60")
 		fail(w, 429, "TooManyRequests")
 		return nil, false
@@ -165,7 +166,7 @@ func (s *Server) verifying(w http.ResponseWriter) (release func(), ok bool) {
 // The administrator reset (ResetPassword without the current password) is
 // refused: Coach's single user is not an administrator.
 func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
-	release, ok := s.verifying(w)
+	release, ok := s.verifying(w, r)
 	if !ok {
 		return
 	}
@@ -208,30 +209,55 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, token st
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// A bounded global window and semaphore cap password verification work. This
-// intentionally simple M1 limit does not retain attacker-controlled IP keys.
+// Login attempts are limited per client address within a one-minute window,
+// so one LAN host cannot lock the owner out (#59). A global cap still bounds
+// brute force spread over many addresses, and a semaphore caps concurrent
+// password hashing. Addresses are only recorded for allowed attempts, so the
+// map never holds more than globalLogins keys.
+const (
+	addressLogins = 10
+	globalLogins  = 100
+)
+
 type loginLimit struct {
-	mu     sync.Mutex
-	start  time.Time
-	count  int
-	active chan struct{}
+	mu        sync.Mutex
+	start     time.Time
+	count     int
+	addresses map[netip.Addr]int
+	active    chan struct{}
 }
 
-func (l *loginLimit) allow() bool {
+func (l *loginLimit) allow(addr netip.Addr) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if time.Since(l.start) >= time.Minute {
-		l.start, l.count = time.Now(), 0
+	if l.addresses == nil || time.Since(l.start) >= time.Minute {
+		l.start, l.count, l.addresses = time.Now(), 0, map[netip.Addr]int{}
 	}
-	if l.count >= 20 {
+	if l.count >= globalLogins || l.addresses[addr] >= addressLogins {
 		return false
 	}
 	l.count++
+	l.addresses[addr]++
 	return true
 }
 
+// clientAddress is the TCP peer address; forwarding headers are not trusted.
+// IPv6 addresses are reduced to their /64 network, which one host controls.
+func clientAddress(r *http.Request) netip.Addr {
+	ap, err := netip.ParseAddrPort(r.RemoteAddr)
+	if err != nil {
+		return netip.Addr{}
+	}
+	addr := ap.Addr().Unmap()
+	if addr.Is6() {
+		prefix, _ := addr.Prefix(64)
+		addr = prefix.Addr()
+	}
+	return addr
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	release, ok := s.verifying(w)
+	release, ok := s.verifying(w, r)
 	if !ok {
 		return
 	}
