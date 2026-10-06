@@ -52,7 +52,7 @@ func TestPlaybackInfoNegotiation(t *testing.T) {
 		{"bad audio type", "AudioStreamIndex=0", "", 400, false},
 		{"missing audio", "AudioStreamIndex=99", "", 400, false},
 		{"subtitles off", "SubtitleStreamIndex=-1", "", 200, true},
-		{"subtitles unsupported", "SubtitleStreamIndex=3", "", 200, false},
+		{"undeliverable subtitle is dropped", "SubtitleStreamIndex=3", "", 200, true},
 		{"missing subtitle", "SubtitleStreamIndex=99", "", 400, false},
 		{"bad subtitle type", "SubtitleStreamIndex=1", "", 400, false},
 		{"source", "MediaSourceId=mediasource_movie", "", 200, true},

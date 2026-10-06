@@ -61,8 +61,9 @@ func TestSidecarSubtitleDelivery(t *testing.T) {
 	if external["IsExternal"] != true || external["DeliveryMethod"] != "External" || external["DeliveryFormat"] != "vtt" || !strings.HasPrefix(deliveryURL, "/videos/movie/mediasource_movie/subtitles/4/stream.vtt?api_key=") {
 		t.Fatalf("external stream: %v", external)
 	}
-	if _, code := info("3"); code != "NoCompatibleStream" {
-		t.Fatalf("bitmap subtitle: code %q, want NoCompatibleStream", code)
+	// A selected bitmap track is dropped: the video plays without subtitles.
+	if sources, code := info("3"); code != "" || sources[0]["SupportsDirectStream"] != true || sources[0]["DefaultSubtitleStreamIndex"] != float64(-1) {
+		t.Fatalf("bitmap subtitle: code %q, source %v", code, sources[0])
 	}
 	// The player fetches the URL with only the token it carries.
 	w := request(h, "GET", "/emby"+deliveryURL, "", "", "")

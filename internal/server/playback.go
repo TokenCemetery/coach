@@ -84,7 +84,8 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 	}
 	source := mediaSource(item, streams)
 	// Subtitles are delivered as separate WebVTT files; burn-in is not
-	// implemented. Never promise a selected subtitle Coach cannot deliver.
+	// implemented. A selected subtitle Coach cannot deliver is dropped and the
+	// video plays without it, rather than refusing playback.
 	subtitle := -1
 	deliverable := func(index int) bool { return s.media.SubtitleDeliverable(item, index) }
 	switch {
@@ -94,7 +95,11 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 		// The client left the choice to the server's subtitle mode.
 		subtitle = defaultSubtitle(item, s.subtitleSelection(), audio, deliverable)
 	}
-	direct := body.supportsDirectStream(item, video, audio) && (subtitle < 0 || deliverable(subtitle))
+	if subtitle >= 0 && !deliverable(subtitle) {
+		slog.Warn("Subtitle not deliverable, playing without it", "item", item.ID, "index", subtitle)
+		subtitle = -1
+	}
+	direct := body.supportsDirectStream(item, video, audio)
 	source["SupportsDirectPlay"] = false
 	source["SupportsDirectStream"] = direct
 	source["SupportsTranscoding"] = false
