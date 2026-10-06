@@ -159,7 +159,8 @@ func TestPlaybackInfoRemuxesSecondaryAudio(t *testing.T) {
 	raw, _ := source["TranscodingUrl"].(string)
 	_, query, _ := strings.Cut(raw, "?")
 	q, _ := url.ParseQuery(query)
-	if source["SupportsDirectStream"] != false || q.Get("AudioStreamIndex") != "2" || q.Get("AudioCodec") != "aac" {
+	// The segments carry only that track, so it is copied, not encoded.
+	if source["SupportsDirectStream"] != false || q.Get("AudioStreamIndex") != "2" || q.Get("AudioCodec") != "aac" || q.Has("MaxAudioChannels") {
 		t.Fatalf("second track: %v", source)
 	}
 }
