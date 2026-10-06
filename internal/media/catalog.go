@@ -172,7 +172,7 @@ func (c *Catalog) Rescan(ctx context.Context) (*Catalog, error) {
 		return nil, err
 	}
 	if len(next.Items) == 0 && len(c.Items) > 0 {
-		return nil, errors.New("media directory has no videos; keeping the previous catalog")
+		return nil, errors.New("media directory has no videos")
 	}
 	return next, nil
 }
