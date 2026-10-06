@@ -52,7 +52,7 @@ podman run -d --name coach -p 127.0.0.1:8097:8097 -v coach-data:/data -v /absolu
 
 Аргументы после имени образа заменяют `-listen :8097`, поэтому `-listen` указывается явно; `-data /data` задан в образе. Для `-web-dir` каталог Emby Web монтируется отдельно (например, `-v /absolute/path/to/emby-webui:/web:ro` и `-web-dir /web`). Пересканирование: `podman kill -s HUP coach`. Ограничение частоты входа считает адрес клиента так, как его видит контейнер; при пробросе порта это может быть общий адрес шлюза.
 
-`scripts/check-container.sh IMAGE` проверяет образ: `-init`, сканирование MKV H.264 + AC3 и remux в HLS (FFprobe читает `h264` + `aac`), остановку с кодом 0. По умолчанию используется Docker, Podman — через `CONTAINER=podman`. Нужны `curl` и `jq`. Workflow [container.yml](.github/workflows/container.yml) собирает образ и запускает эту проверку на linux/amd64 и linux/arm64 при push в `main` и в pull request.
+`scripts/check-container.sh IMAGE` проверяет образ: `-init`, сканирование MKV H.264 + AC3 и remux в HLS (FFprobe читает `h264` + `aac`), остановку с кодом 0. По умолчанию используется Docker, Podman — через `CONTAINER=podman`. Нужны `curl` и `jq`.
 
 ## Каталог фильмов и сериалов
 
@@ -167,6 +167,14 @@ COACH_WEB_DIR=../emby-webui COACH_CHECK_MEDIA=1 node scripts/check-emby-client.m
 Другой экземпляр/бинарник можно указать через `EMBY_REFERENCE` и `COACH_BINARY`. Проверка ожидает web-версию 4.10.0.40; изменение версии требует пересмотра контракта. В отчёт выводятся SHA-256 модулей и маршруты без токенов. События приложения и хранилище браузера заменены минимальными адаптерами. В медиасценарии оригинальный ApiClient открывает WebSocket, принимает UserDataChanged и переподключается после рестарта; проверяется закрытие при logout. DOM, плеер и connection manager не проверяются.
 
 Те же команды есть в `Makefile`: `make` (lint, test, build), `make lint` (golangci-lint v2 по `.golangci.yml`, включая go vet и проверку gofmt/goimports; устанавливается отдельно), `make vet`, `make build-linux` (Linux amd64, `CGO_ENABLED=0`), `make check` (сборка и Node-сценарий; переменные окружения передаются как выше), `make e2e`, `make e2e-report`, `make clean`. `make lint` проверяет и модуль `e2e/` тем же `.golangci.yml`.
+
+CI ([ci.yml](.github/workflows/ci.yml)) запускается при push в `main` и в каждом pull request. Этапы идут последовательно, каждый следующий — только после успеха предыдущего:
+
+1. Сборка: golangci-lint v2.14 для обоих модулей, `make build build-linux`.
+2. Тесты: `make test` и `make e2e` с FFmpeg из Ubuntu 24.04.
+3. Контейнер: сборка образа и `scripts/check-container.sh` на linux/amd64 и linux/arm64.
+
+Сборка и тесты идут на минимальной версии Go из `go.mod`, образ собирается Go из `Dockerfile`. Node-сценарий (`make check`) в CI не запускается.
 
 ### E2E по контракту
 
