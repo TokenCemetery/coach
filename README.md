@@ -171,7 +171,7 @@ COACH_WEB_DIR=../emby-webui COACH_CHECK_MEDIA=1 node scripts/check-emby-client.m
 CI ([ci.yml](.github/workflows/ci.yml)) запускается при push в `main` и в каждом pull request. Этапы идут последовательно, каждый следующий — только после успеха предыдущего:
 
 1. Сборка: golangci-lint v2.14 для обоих модулей, `make build build-linux`.
-2. Тесты: `make test` и `make e2e` в `golang:1.25-alpine3.24` с FFmpeg 8.1, как в образе, от пользователя без прав root. С FFmpeg 6.1 и 7.1 (Ubuntu 24.04, Debian 13) тест перемотки HLS падает (#64).
+2. Тесты: `make test` и `make e2e` в `golang:1.25-alpine3.24` с FFmpeg 8.1, как в образе, от пользователя без прав root. Тесты HLS также проходят с FFmpeg 6.1 и 7.1 (Alpine 3.21, Debian 13).
 3. Контейнер: сборка образа и `scripts/check-container.sh` на linux/amd64 и linux/arm64.
 
 Сборка и тесты идут на Go 1.25, минимальной версии из `go.mod`; образ собирается на Go из `Dockerfile`. Node-сценарий (`make check`) в CI не запускается.

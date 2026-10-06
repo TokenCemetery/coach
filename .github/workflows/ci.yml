@@ -34,7 +34,7 @@ jobs:
   test:
     needs: build
     runs-on: ubuntu-24.04
-    # FFmpeg 8.1, as in the image: HLS seek tests fail on older FFmpeg (#64).
+    # FFmpeg 8.1, as in the image.
     container: golang:1.25-alpine3.24
     steps:
       - uses: actions/checkout@v7
