@@ -37,6 +37,23 @@ unset coach_password
 
 Другие параметры: `-listen` (по умолчанию `127.0.0.1:8097`), `-data` (`./data`), `-name` (`Coach`). Слушатель по умолчанию локальный; TLS и работа за reverse proxy ещё не настроены.
 
+### Контейнер
+
+[Dockerfile](Dockerfile) собирает образ: статический `coach` на Alpine 3.24 с FFmpeg/FFprobe 8.1 (протокол `fd`, `libx264`, `aac`). Процесс работает от пользователя `coach` (UID 10001), состояние хранится в томе `/data`, внутри контейнера слушается `:8097`. Пример для Podman; Docker принимает те же команды:
+
+```sh
+podman build -t coach .
+read -rs 'coach_password?Пароль нового пользователя Coach: '
+printf '\n'
+printf '%s\n' "$coach_password" | podman run --rm -i -v coach-data:/data coach -init -username viewer
+unset coach_password
+podman run -d --name coach -p 127.0.0.1:8097:8097 -v coach-data:/data -v /absolute/path/to/media:/media:ro coach -listen :8097 -media-dir /media -web-upstream http://192.168.1.11:8096
+```
+
+Аргументы после имени образа заменяют `-listen :8097`, поэтому `-listen` указывается явно; `-data /data` задан в образе. Для `-web-dir` каталог Emby Web монтируется отдельно (например, `-v /absolute/path/to/emby-webui:/web:ro` и `-web-dir /web`). Пересканирование: `podman kill -s HUP coach`. Ограничение частоты входа считает адрес клиента так, как его видит контейнер; при пробросе порта это может быть общий адрес шлюза.
+
+`scripts/check-container.sh IMAGE` проверяет образ: `-init`, сканирование MKV H.264 + AC3 и remux в HLS (FFprobe читает `h264` + `aac`), остановку с кодом 0. По умолчанию используется Docker, Podman — через `CONTAINER=podman`. Нужны `curl` и `jq`.
+
 ## Каталог фильмов и сериалов
 
 Для сканирования указать одну тестовую папку и установить FFprobe с поддержкой протокола `fd`:
@@ -150,6 +167,14 @@ COACH_WEB_DIR=../emby-webui COACH_CHECK_MEDIA=1 node scripts/check-emby-client.m
 Другой экземпляр/бинарник можно указать через `EMBY_REFERENCE` и `COACH_BINARY`. Проверка ожидает web-версию 4.10.0.40; изменение версии требует пересмотра контракта. В отчёт выводятся SHA-256 модулей и маршруты без токенов. События приложения и хранилище браузера заменены минимальными адаптерами. В медиасценарии оригинальный ApiClient открывает WebSocket, принимает UserDataChanged и переподключается после рестарта; проверяется закрытие при logout. DOM, плеер и connection manager не проверяются.
 
 Те же команды есть в `Makefile`: `make` (lint, test, build), `make lint` (golangci-lint v2 по `.golangci.yml`, включая go vet и проверку gofmt/goimports; устанавливается отдельно), `make vet`, `make build-linux` (Linux amd64, `CGO_ENABLED=0`), `make check` (сборка и Node-сценарий; переменные окружения передаются как выше), `make e2e`, `make e2e-report`, `make clean`. `make lint` проверяет и модуль `e2e/` тем же `.golangci.yml`.
+
+CI ([ci.yml](.github/workflows/ci.yml)) запускается при push в `main` и в каждом pull request. Этапы идут последовательно, каждый следующий — только после успеха предыдущего:
+
+1. Сборка: golangci-lint v2.14 для обоих модулей, `make build build-linux`.
+2. Тесты: `make test` и `make e2e` в `golang:1.25-alpine3.24` с FFmpeg 8.1, как в образе, от пользователя без прав root. С FFmpeg 6.1 и 7.1 (Ubuntu 24.04, Debian 13) тест перемотки HLS падает (#64).
+3. Контейнер: сборка образа и `scripts/check-container.sh` на linux/amd64 и linux/arm64.
+
+Сборка и тесты идут на Go 1.25, минимальной версии из `go.mod`; образ собирается на Go из `Dockerfile`. Node-сценарий (`make check`) в CI не запускается.
 
 ### E2E по контракту
 
