@@ -72,6 +72,23 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 		return
 	}
 	playSession := randomSessionID()
+	// Emby Web switches quality or audio track by asking again with the play
+	// it replaces in CurrentPlaySessionId, and deletes that play's encoding
+	// only after this answer. Ending it here frees its HLS slot, which a switch
+	// between two transcoded qualities would otherwise find taken.
+	if current := r.URL.Query().Get("CurrentPlaySessionId"); current != "" {
+		if len(current) > 128 {
+			fail(w, 400, "InvalidRequest")
+			return
+		}
+		if s.hls != nil {
+			s.hls.Stop(current, session.ID)
+		}
+		if err := s.continuePlay(token, item.ID, current, playSession); err != nil {
+			s.changed(w, err)
+			return
+		}
+	}
 	streams := mediaStreams(item)
 	// Deliverable subtitles are fetched by the player beside the direct
 	// stream. Like the stream URL, theirs carries the token for a <track>.
@@ -368,6 +385,32 @@ func (s *Server) reportPlaystate(event string) authenticated {
 	}
 }
 
+// maxSwitches bounds the IDs one play keeps from quality and track switches.
+const maxSwitches = 8
+
+// continuePlay adds playSession to the client's current play of item. After a
+// switch Emby Web reports progress and stop with the new PlaySessionId when the
+// stream changed, and keeps the old one when it did not, without a new start
+// (#73). Only the session's newest play of the same item, not yet stopped and
+// named by current, continues; anything else is left alone.
+func (s *Server) continuePlay(token, itemID, current, playSession string) error {
+	s.itemMu.Lock()
+	defer s.itemMu.Unlock()
+	return s.store.Change(token, func(_ *state.Data, session *state.Session) {
+		n := len(session.RecentPlays)
+		if n == 0 {
+			return
+		}
+		play := &session.RecentPlays[n-1]
+		if play.Is(current) && play.ItemID == itemID && !play.Stopped {
+			if len(play.Switched) >= maxSwitches {
+				play.Switched = slices.Clone(play.Switched[len(play.Switched)-maxSwitches+1:])
+			}
+			play.Switched = append(play.Switched, playSession)
+		}
+	})
+}
+
 // ID-bearing reports use a durable 64-start retry window per client session.
 // Only the newest start accepts progress/stop; a completed play cannot reopen.
 // Legacy reports without an ID retain arrival-order semantics.
@@ -381,7 +424,7 @@ func playReportProblem(session *state.Session, itemID, playID, event string) str
 	if playID == "" {
 		return ""
 	}
-	index := slices.IndexFunc(session.RecentPlays, func(p state.PlaybackRecord) bool { return p.ID == playID })
+	index := slices.IndexFunc(session.RecentPlays, func(p state.PlaybackRecord) bool { return p.Is(playID) })
 	if event == "start" {
 		if index >= 0 {
 			return "repeated start"

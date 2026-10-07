@@ -266,3 +266,43 @@ func TestPolicyFollowsHLS(t *testing.T) {
 		t.Fatalf("with HLS: %v", p)
 	}
 }
+
+// Switching between two transcoded qualities asks PlaybackInfo while the
+// current play's session still holds the only transcoding slot; Emby Web
+// deletes it only afterwards, so the play it names is released first.
+func TestStreamSwitchReleasesCurrentSession(t *testing.T) {
+	store, _, dir := newTestServer(t)
+	server := New(store, "test", nil, &media.Catalog{ID: "movies", Items: []media.Item{playbackMovie()}})
+	m, err := hls.NewManager("ffmpeg", "ffprobe", filepath.Join(dir, "transcode"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	server.SetHLS(m)
+	h := server.Handler()
+	token := login(t, h)
+	// A media playlist request opens the session, even if the stream fails.
+	request(h, "GET", "/Videos/movie/main.m3u8?VideoCodec=h264&VideoBitrate=1000000&PlaySessionId=current", "", "", token)
+	if m.Available("other", true) {
+		t.Fatal("the transcoding session did not open")
+	}
+	profile := strings.Replace(hlsProfile, `"Value":"51"`, `"Value":"40"`, 1)
+	info := func(query string) map[string]any {
+		t.Helper()
+		w := request(h, "POST", "/Items/movie/PlaybackInfo?"+query, "application/json", `{"DeviceProfile":`+profile+`}`, token)
+		expectStatus(t, w, 200)
+		var response map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		return response
+	}
+	if r := info("MaxStreamingBitrate=420000"); r["ErrorCode"] != "RateLimitExceeded" {
+		t.Fatalf("another play took the slot: %v", r)
+	}
+	r := info("MaxStreamingBitrate=420000&CurrentPlaySessionId=current")
+	if source := r["MediaSources"].([]any)[0].(map[string]any); r["ErrorCode"] != nil || source["TranscodingUrl"] == nil {
+		t.Fatalf("switch: %v", r)
+	}
+	expectStatus(t, request(h, "POST", "/Items/movie/PlaybackInfo?CurrentPlaySessionId="+strings.Repeat("a", 129), "application/json", "{}", token), 400)
+}

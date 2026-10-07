@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -78,10 +79,18 @@ type Session struct {
 }
 
 // PlaybackRecord retains a bounded retry window per authenticated client.
+// Switched holds the play session IDs the play took on when the client
+// switched quality or audio track; reports may carry any of them.
 type PlaybackRecord struct {
-	ID      string
-	ItemID  string
-	Stopped bool
+	ID       string
+	ItemID   string
+	Stopped  bool
+	Switched []string `json:",omitempty"`
+}
+
+// Is reports whether playID names this play.
+func (p PlaybackRecord) Is(playID string) bool {
+	return p.ID == playID || slices.Contains(p.Switched, playID)
 }
 
 // Data is the persisted state file contents (schema v1).

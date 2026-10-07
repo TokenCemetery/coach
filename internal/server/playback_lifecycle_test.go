@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/TokenCemetery/coach/internal/media"
@@ -102,4 +103,72 @@ func TestPlayReportProblems(t *testing.T) {
 			t.Fatalf("%s %s %s: got %q, want %q", tc.item, tc.play, tc.event, got, tc.problem)
 		}
 	}
+}
+
+// Switching quality or audio track asks PlaybackInfo again with the current
+// play in CurrentPlaySessionId. Emby Web then reports under the new ID when
+// the stream changed and under the old one when it did not; both belong to
+// the same play (#73).
+func TestStreamSwitchContinuesPlay(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	movie := playbackMovie()
+	movie.RunTimeTicks = 600000000
+	catalog := &media.Catalog{ID: "movies", Items: []media.Item{movie, {ID: "other", RunTimeTicks: 100000000}}}
+	h := New(store, "test", nil, catalog).Handler()
+	token := login(t, h)
+	report := func(endpoint, playID string, position int64) {
+		t.Helper()
+		body, err := json.Marshal(object{"ItemId": "movie", "PlaySessionId": playID, "PositionTicks": position})
+		if err != nil {
+			t.Fatal(err)
+		}
+		expectStatus(t, request(h, "POST", "/Sessions/Playing"+endpoint, "application/json", string(body), token), 204)
+	}
+	playbackInfo := func(item, query string) string {
+		t.Helper()
+		w := request(h, "POST", "/Items/"+item+"/PlaybackInfo?"+query, "application/json", "{}", token)
+		expectStatus(t, w, 200)
+		var response struct{ PlaySessionId string }
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		return response.PlaySessionId
+	}
+	position := func() int64 { return store.Snapshot().User.Items["movie"].PositionTicks }
+	expect := func(want int64, why string) {
+		t.Helper()
+		if got := position(); got != want {
+			t.Fatalf("%s: position %d, want %d", why, got, want)
+		}
+	}
+
+	first := playbackInfo("movie", "")
+	report("", first, 0)
+	report("/Progress", first, 10000000)
+	// Another item or a play the server never issued does not continue it.
+	unrelated := playbackInfo("other", "CurrentPlaySessionId="+first)
+	stranger := playbackInfo("movie", "CurrentPlaySessionId=unknown")
+	report("/Progress", unrelated, 15000000)
+	report("/Progress", stranger, 15000000)
+	expect(10000000, "unrelated play session")
+	// Both the old and the new ID report for the play, also after a second
+	// switch named by the first switch's ID.
+	second := playbackInfo("movie", "MaxStreamingBitrate=420000&CurrentPlaySessionId="+first)
+	report("/Progress", second, 20000000)
+	expect(20000000, "progress under the new ID")
+	report("/Progress", first, 25000000)
+	expect(25000000, "progress under the old ID")
+	third := playbackInfo("movie", "MaxStreamingBitrate=320000&CurrentPlaySessionId="+second)
+	report("/Progress", third, 30000000)
+	expect(30000000, "progress after a second switch")
+	report("/Stopped", third, 40000000)
+	if got := store.Snapshot().User.Items["movie"]; got.PositionTicks != 40000000 || got.PlayCount != 1 {
+		t.Fatalf("after stop: %+v", got)
+	}
+	// A stopped play neither moves nor continues.
+	report("/Progress", first, 5000000)
+	fourth := playbackInfo("movie", "CurrentPlaySessionId="+third)
+	report("/Progress", fourth, 50000000)
+	expect(40000000, "stopped play")
+	expectStatus(t, request(h, "POST", "/Items/movie/PlaybackInfo?CurrentPlaySessionId="+strings.Repeat("a", 129), "application/json", "{}", token), 400)
 }
