@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"slices"
 
 	"github.com/TokenCemetery/coach/internal/media"
 	"github.com/TokenCemetery/coach/internal/state"
@@ -52,16 +53,98 @@ func (s *Server) Close() {
 }
 
 func (s *Server) publishUserData(userID string, data object) {
-	body, err := json.Marshal(object{"MessageType": "UserDataChanged", "Data": object{
+	s.publish(object{"MessageType": "UserDataChanged", "Data": object{
 		"UserId": userID, "UserDataList": []object{data},
-	}})
+	}}, func(sock *socket) bool { return sock.userID == userID })
+}
+
+// publishLibraryChange tells every connection how a rescan changed the
+// catalog, so that Emby Web refreshes the screens showing it.
+func (s *Server) publishLibraryChange(old, next *media.Catalog) {
+	if data := libraryChange(old, next); data != nil {
+		s.publish(object{"MessageType": "LibraryChanged", "Data": data}, func(*socket) bool { return true })
+	}
+}
+
+// libraryChange lists what changed between two catalogs in the fields Emby
+// Web's LibraryChanged handler reads, or returns nil when nothing did. A list
+// whose parent is in FoldersAddedTo, FoldersRemovedFrom or CollectionFolders
+// reloads, as does one showing a removed item. The field names come from the
+// client, not from a captured Emby message.
+func libraryChange(old, next *media.Catalog) object {
+	added, removed, updated := set{}, set{}, set{}
+	addedTo, removedFrom, libraries := set{}, set{}, set{}
+	previous, current := catalogEntries(old), catalogEntries(next)
+	for id, e := range current {
+		was, ok := previous[id]
+		switch {
+		case !ok:
+			added[id], addedTo[e.parent], libraries[e.library] = true, true, true
+		case was.item.Size != e.item.Size || !was.item.Modified.Equal(e.item.Modified) || was.item.RunTimeTicks != e.item.RunTimeTicks:
+			updated[id], libraries[e.library] = true, true
+		}
+	}
+	for id, e := range previous {
+		if _, ok := current[id]; !ok {
+			removed[id], removedFrom[e.parent], libraries[e.library] = true, true, true
+		}
+	}
+	if len(added)+len(removed)+len(updated) == 0 {
+		return nil
+	}
+	return object{"ItemsAdded": added.sorted(), "ItemsRemoved": removed.sorted(), "ItemsUpdated": updated.sorted(),
+		"FoldersAddedTo": addedTo.sorted(), "FoldersRemovedFrom": removedFrom.sorted(), "CollectionFolders": libraries.sorted()}
+}
+
+type set map[string]bool
+
+func (s set) sorted() []string {
+	ids := make([]string, 0, len(s))
+	for id := range s {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+type catalogEntry struct {
+	item            media.Item
+	parent, library string
+}
+
+// catalogEntries indexes a catalog's items and folders with their parent and
+// library: movies sit directly in the movie library, series in the TV
+// library.
+func catalogEntries(c *media.Catalog) map[string]catalogEntry {
+	entries := map[string]catalogEntry{}
+	if c == nil {
+		return entries
+	}
+	for _, items := range [][]media.Item{c.Items, c.Folders} {
+		for _, item := range items {
+			e := catalogEntry{item: item, parent: item.ParentID, library: c.ID}
+			if item.Kind == "Series" || item.Kind == "Season" || item.Kind == "Episode" {
+				e.library = c.SeriesLibraryID()
+			}
+			if e.parent == "" {
+				e.parent = e.library
+			}
+			entries[item.ID] = e
+		}
+	}
+	return entries
+}
+
+// publish queues message on the connections match selects.
+func (s *Server) publish(message object, match func(*socket) bool) {
+	body, err := json.Marshal(message)
 	if err != nil {
 		return
 	}
 	s.socketMu.Lock()
 	defer s.socketMu.Unlock()
 	for sock := range s.connections {
-		if sock.userID != userID {
+		if !match(sock) {
 			continue
 		}
 		select {

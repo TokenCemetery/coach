@@ -52,10 +52,10 @@ func (s *Server) catalog() *media.Catalog {
 	return s.media.Load()
 }
 
-// SetCatalog publishes a rescanned catalog. Requests already running keep the
-// snapshot they took.
+// SetCatalog publishes a rescanned catalog and sends LibraryChanged when it
+// differs. Requests already running keep the snapshot they took.
 func (s *Server) SetCatalog(catalog *media.Catalog) {
-	s.media.Store(catalog)
+	s.publishLibraryChange(s.media.Swap(catalog), catalog)
 }
 
 func respond(w http.ResponseWriter, status int, data any) {

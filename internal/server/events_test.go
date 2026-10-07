@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -220,4 +221,48 @@ func TestEventQueueBoundAndUserIsolation(t *testing.T) {
 	if api.registerSocket(fast) {
 		t.Fatal("revoked token accepted after auth race")
 	}
+}
+
+func TestLibraryChangedAfterRescan(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	movie := playbackMovie()
+	series := media.Item{ID: "series", Kind: "Series", Name: "Show"}
+	series.ParentID = (&media.Catalog{ID: "movies"}).SeriesLibraryID()
+	season := media.Item{ID: "season", Kind: "Season", ParentID: "series"}
+	episode := media.Item{ID: "episode", Kind: "Episode", ParentID: "season", Size: 1}
+	api := New(store, "test", nil, &media.Catalog{ID: "movies", Items: []media.Item{movie, episode}, Folders: []media.Item{series, season}})
+	t.Cleanup(api.Close)
+	h := api.Handler()
+	server := httptest.NewServer(h)
+	defer server.Close()
+	_, reader := openEventSocket(t, server, login(t, h))
+
+	changed := movie
+	changed.Size++
+	added := media.Item{ID: "added", Kind: "Movie", Size: 1}
+	next := &media.Catalog{ID: "movies", Items: []media.Item{changed, added}, Folders: []media.Item{series, season}}
+	api.SetCatalog(next)
+	kind, raw := expectSocketMessage(t, reader)
+	var data map[string][]string
+	if kind != "LibraryChanged" || json.Unmarshal(raw, &data) != nil {
+		t.Fatalf("message %s %s", kind, raw)
+	}
+	tvLibrary := next.SeriesLibraryID()
+	for field, want := range map[string][]string{
+		"ItemsAdded": {"added"}, "ItemsRemoved": {"episode"}, "ItemsUpdated": {"movie"},
+		"FoldersAddedTo": {"movies"}, "FoldersRemovedFrom": {"season"}, "CollectionFolders": sortedIDs("movies", tvLibrary),
+	} {
+		if got := data[field]; !slices.Equal(got, want) {
+			t.Fatalf("%s = %v, want %v", field, got, want)
+		}
+	}
+	// An unchanged catalog sends nothing; the next event is user data.
+	api.SetCatalog(&media.Catalog{ID: "movies", Items: []media.Item{changed, added}, Folders: []media.Item{series, season}})
+	expectStatus(t, request(h, "POST", "/Users/"+store.Snapshot().User.ID+"/FavoriteItems/movie", "", "", login(t, h)), 200)
+	expectUserData(t, reader, store.Snapshot().User.ID)
+}
+
+func sortedIDs(ids ...string) []string {
+	slices.Sort(ids)
+	return ids
 }
