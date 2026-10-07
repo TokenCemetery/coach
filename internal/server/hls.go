@@ -62,10 +62,12 @@ func (p playbackRequest) remuxCodecs(item media.Item, video, audio *media.Stream
 }
 
 // videoEncoding limits a video encoded to H.264. Bitrate is positive for an
-// encoded video and zero for a copied one; a zero size is unlimited.
+// encoded video and zero for a copied one; a zero size or level is
+// unlimited. Level is the profile's VideoLevel, such as 42 for 4.2.
 type videoEncoding struct {
 	Bitrate             int64
 	MaxWidth, MaxHeight int
+	Level               int
 }
 
 // transcodeCodecs returns the audio codec of an HLS stream whose video is
@@ -76,6 +78,7 @@ func (p playbackRequest) transcodeCodecs(item media.Item, video, audio *media.St
 		return "", 0, encoding, false
 	}
 	encoding = p.h264Limits()
+	encoding.fitLevel(video.Width, video.Height)
 	if bitrate := p.transcodeBitrate(item); bitrate < 0 {
 		return "", 0, encoding, false
 	} else if encoding.Bitrate == 0 || bitrate < encoding.Bitrate {
@@ -97,7 +100,7 @@ func (p playbackRequest) transcodeCodecs(item media.Item, video, audio *media.St
 	return "", 0, encoding, false
 }
 
-// h264Limits collects the LessThanEqual limits on Width, Height and
+// h264Limits collects the LessThanEqual limits on Width, Height, VideoLevel and
 // VideoBitrate from the profile's video codec conditions that apply to H.264
 // in MPEG-TS, such as Emby Web's Width 1920 for a browser that cannot decode
 // 4K smoothly. Conditions on the source (ApplyConditions) and other
@@ -127,10 +130,58 @@ func (p playbackRequest) h264Limits() videoEncoding {
 				limits.MaxHeight = int(lower(int64(limits.MaxHeight), int64(value)))
 			case "videobitrate":
 				limits.Bitrate = lower(limits.Bitrate, int64(value))
+			case "videolevel":
+				limits.Level = int(lower(int64(limits.Level), int64(value)))
 			}
 		}
 	}
 	return limits
+}
+
+// h264FrameSizes maps H.264 levels (as Emby writes them, 42 for 4.2) to the
+// largest frame they allow, in 16x16 macroblocks (MaxFS, ITU-T H.264 Table
+// A-1).
+var h264FrameSizes = []struct{ level, macroblocks int }{
+	{10, 99}, {11, 396}, {21, 792}, {22, 1620}, {31, 3600}, {32, 5120},
+	{40, 8192}, {42, 8704}, {50, 22080}, {51, 36864}, {60, 139264},
+}
+
+// fitLevel lowers MaxWidth and MaxHeight so that a source of width x height,
+// scaled to the current limits with its aspect ratio kept, also fits the
+// largest frame of the level. The level's macroblock rate, which bounds the
+// frame rate, is not checked. An unknown size or level changes nothing.
+func (e *videoEncoding) fitLevel(width, height int) {
+	if e.Level <= 0 || width <= 0 || height <= 0 {
+		return
+	}
+	most := 0
+	for _, l := range h264FrameSizes {
+		if l.level <= e.Level {
+			most = l.macroblocks
+		}
+	}
+	if most == 0 {
+		return
+	}
+	scale := 1.0
+	if e.MaxWidth > 0 {
+		scale = min(scale, float64(e.MaxWidth)/float64(width))
+	}
+	if e.MaxHeight > 0 {
+		scale = min(scale, float64(e.MaxHeight)/float64(height))
+	}
+	macroblocks := func(s float64) int {
+		w, h := int(float64(width)*s)/2*2, int(float64(height)*s)/2*2
+		return ((w + 15) / 16) * ((h + 15) / 16)
+	}
+	if macroblocks(scale) <= most {
+		return
+	}
+	scale = math.Sqrt(float64(most*256) / float64(width*height))
+	for scale > 0 && macroblocks(scale) > most {
+		scale -= 0.001
+	}
+	e.MaxWidth, e.MaxHeight = max(int(float64(width)*scale)/2*2, 2), max(int(float64(height)*scale)/2*2, 2)
 }
 
 // Without a client limit, an encoded video of unknown bitrate is capped at

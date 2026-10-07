@@ -189,3 +189,35 @@ func TestPlaybackInfoRemuxesSecondaryAudio(t *testing.T) {
 		t.Fatalf("second track: %v", source)
 	}
 }
+
+func TestFitLevel(t *testing.T) {
+	macroblocks := func(w, h int) int { return ((w + 15) / 16) * ((h + 15) / 16) }
+	for _, tc := range []struct {
+		name          string
+		in            videoEncoding
+		width, height int
+		most          int // 0: limits unchanged
+	}{
+		{"4K at 4.2", videoEncoding{Level: 42}, 3840, 2160, 8704},
+		{"4K at 4.1", videoEncoding{Level: 41}, 3840, 2160, 8192},
+		{"4K at 3.0", videoEncoding{Level: 30}, 3840, 2160, 1620},
+		{"1080p at 4.0", videoEncoding{Level: 40}, 1920, 1080, 0},
+		{"4K at 5.1", videoEncoding{Level: 51}, 3840, 2160, 0},
+		{"4K already 1280 wide at 4.2", videoEncoding{Level: 42, MaxWidth: 1280}, 3840, 2160, 0},
+		{"unknown size", videoEncoding{Level: 30}, 0, 0, 0},
+		{"no level", videoEncoding{}, 3840, 2160, 0},
+	} {
+		got := tc.in
+		got.fitLevel(tc.width, tc.height)
+		if tc.most == 0 {
+			if got != tc.in {
+				t.Fatalf("%s: limits changed to %+v", tc.name, got)
+			}
+			continue
+		}
+		ratio := float64(got.MaxWidth) / float64(got.MaxHeight)
+		if mb := macroblocks(got.MaxWidth, got.MaxHeight); mb > tc.most || mb < tc.most*9/10 || ratio < 1.76 || ratio > 1.79 {
+			t.Fatalf("%s: %dx%d is %d macroblocks, want at most %d at 16:9", tc.name, got.MaxWidth, got.MaxHeight, mb, tc.most)
+		}
+	}
+}
