@@ -208,7 +208,9 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			"startindex", "limit", "sortby", "sortorder", "isfolder", "isplayed", "isfavorite", "filters",
 			"fields", "enableimages", "enableimagetypes", "imagetypelimit", "enableuserdata", "enabletotalrecordcount", "groupitems",
 			"groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "excludelocationtypes",
-			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids", "wassearched", "minpremieredate", "isunaired", "includenextup", "isspecialepisode", "ismissing", "isvirtualunaired", "collectiontypes", "canedititems":
+			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids", "wassearched", "minpremieredate", "isunaired", "includenextup", "isspecialepisode", "ismissing", "isvirtualunaired", "collectiontypes", "canedititems",
+			"containers", "videocodecs", "audiocodecs", "audiolayouts", "subtitlecodecs", "audiolanguages", "subtitlelanguages", "extendedvideotypes",
+			"genres", "studios", "tags", "officialratings", "years":
 		default:
 			if !strings.HasPrefix(key, "x-emby-") {
 				fail(w, 400, "UnsupportedQuery")
@@ -389,6 +391,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			// The library is read-only and Coach has no playlists or
 			// collections, so the user can edit no item (#77).
 			query["canedititems"] == "true" ||
+			failsMediaFilters(catalog, item, query) ||
 			// The series page lists specials (Season 00 episodes) in their own row.
 			(query["isspecialepisode"] != "" && (query["isspecialepisode"] == "true") != (kind == "Episode" && item.SeasonNumber == 0))
 	})

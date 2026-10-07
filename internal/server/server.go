@@ -322,6 +322,7 @@ func (s *Server) Handler() http.Handler {
 	// this route is registered at the root and not under the API prefix.
 	mux.HandleFunc("GET /embywebsocket", s.protect(s.websocket))
 	s.catalogRoutes(mux)
+	s.filterRoutes(mux)
 	s.homeRoutes(mux)
 	s.playbackRoutes(mux)
 	s.hlsRoutes(mux)

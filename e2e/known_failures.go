@@ -115,7 +115,6 @@ var knownFailures = map[string]knownFailure{
 	"getUIView":     unranked,
 	"postUICommand": unranked,
 	// GenresService
-	"getGenres":       unranked,
 	"getGenresByName": unranked,
 	// HlsSegmentService
 	// ImageService
@@ -314,7 +313,6 @@ var knownFailures = map[string]knownFailure{
 	// NotificationsService
 	"postNotificationsAdmin": administration,
 	// OfficialRatingService
-	"getOfficialratings": unranked,
 	// OpenApiService
 	"getOpenapi":     administration,
 	"getOpenapiJson": administration,
@@ -392,7 +390,6 @@ var knownFailures = map[string]knownFailure{
 	"postSessionsByIdViewing":             unranked,
 	"postSessionsCapabilities":            unranked,
 	// StudiosService
-	"getStudios":       unranked,
 	"getStudiosByName": unranked,
 	// SubtitleOptionsService
 	"getEncodingSubtitleoptions":  subtitles,
@@ -449,16 +446,7 @@ var knownFailures = map[string]knownFailure{
 	"postSystemShutdown":            administration,
 	// TagService
 	"getArtistsPrefixes":      unranked,
-	"getAudiocodecs":          unranked,
-	"getAudiolayouts":         unranked,
-	"getContainers":           unranked,
-	"getExtendedvideotypes":   unranked,
 	"getItemsPrefixes":        unranked,
-	"getStreamlanguages":      unranked,
-	"getSubtitlecodecs":       unranked,
-	"getTags":                 unranked,
-	"getVideocodecs":          unranked,
-	"getYears":                unranked,
 	"postItemsByIdTagsAdd":    unranked,
 	"postItemsByIdTagsDelete": unranked,
 	// ToneMapOptionsService

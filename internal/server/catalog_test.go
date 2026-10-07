@@ -82,8 +82,15 @@ func TestMovieCatalog(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &latest); err != nil || len(latest) != 1 || latest[0].Id != "b" {
 		t.Fatal("latest response is incorrect")
 	}
-	for _, query := range []string{"Limit=-1", "Limit=1001", "StartIndex=bad", "StartIndex=999999999999999999999", "Limit=1&limit=2", "Recursive=yes", "SortBy=Random", "SortOrder=oops", "Genres=Comedy", "Filters=IsResumable"} {
+	for _, query := range []string{"Limit=-1", "Limit=1001", "StartIndex=bad", "StartIndex=999999999999999999999", "Limit=1&limit=2", "Recursive=yes", "SortBy=Random", "SortOrder=oops", "PersonIds=x", "Filters=IsResumable"} {
 		expectStatus(t, request(h, "GET", "/Items?"+query, "", "", token), 400)
+	}
+	// Coach has no genres: a genre filter is accepted and matches nothing,
+	// rather than returning the unfiltered catalogue (#78).
+	w = request(h, "GET", "/Items?Recursive=true&Genres=Comedy", "", "", token)
+	expectStatus(t, w, 200)
+	if !strings.Contains(w.Body.String(), `"TotalRecordCount":0`) {
+		t.Fatalf("genre filter: %s", w.Body.String())
 	}
 	expectStatus(t, request(h, "GET", "/Items/missing", "", "", token), 404)
 	expectStatus(t, request(h, "GET", "/Users/other/Items/a", "", "", token), 403)
