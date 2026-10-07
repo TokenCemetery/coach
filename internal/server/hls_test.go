@@ -124,3 +124,43 @@ func TestStopActiveEncodings(t *testing.T) {
 	expectStatus(t, request(h, "DELETE", "/Videos/ActiveEncodings?DeviceId=d", "", "", token), 204)
 	fill()
 }
+
+func TestPlaybackInfoRemuxesSecondaryAudio(t *testing.T) {
+	store, _, dir := newTestServer(t)
+	movie := playbackMovie()
+	movie.Streams[1].Codec, movie.Streams[1].Channels = "aac", 2
+	server := New(store, "test", nil, &media.Catalog{ID: "movies", Items: []media.Item{movie}})
+	m, err := hls.NewManager("ffmpeg", "ffprobe", filepath.Join(dir, "transcode"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	server.SetHLS(m)
+	h := server.Handler()
+	token := login(t, h)
+	// Emby Web in Chromium cannot switch tracks in a file: its profile
+	// accepts only the first audio track, as captured from 4.10.0.40.
+	profile := strings.Replace(hlsProfile, `"CodecProfiles":[`, `"CodecProfiles":[{"Type":"VideoAudio","Codec":"aac",`+
+		`"Conditions":[{"Condition":"Equals","Property":"IsSecondaryAudio","Value":"false","IsRequired":"false"}]},`, 1)
+	info := func(query string) map[string]any {
+		t.Helper()
+		w := request(h, "POST", "/Items/movie/PlaybackInfo?"+query, "application/json", `{"DeviceProfile":`+profile+`}`, token)
+		expectStatus(t, w, 200)
+		var response struct{ MediaSources []map[string]any }
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		return response.MediaSources[0]
+	}
+	if source := info("AudioStreamIndex=1"); source["SupportsDirectStream"] != true || source["TranscodingUrl"] != nil {
+		t.Fatalf("first track: %v", source)
+	}
+	source := info("AudioStreamIndex=2")
+	raw, _ := source["TranscodingUrl"].(string)
+	_, query, _ := strings.Cut(raw, "?")
+	q, _ := url.ParseQuery(query)
+	// The segments carry only that track, so it is copied, not encoded.
+	if source["SupportsDirectStream"] != false || q.Get("AudioStreamIndex") != "2" || q.Get("AudioCodec") != "aac" || q.Has("MaxAudioChannels") {
+		t.Fatalf("second track: %v", source)
+	}
+}
