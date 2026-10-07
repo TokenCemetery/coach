@@ -321,10 +321,10 @@ func TestStaleRequestDoesNotMoveTheJob(t *testing.T) {
 		}
 		result <- err
 	}()
-	for s.requests.Load() < 2 {
+	for s.newest.Load()>>32 < 2 {
 		time.Sleep(time.Millisecond)
 	}
-	s.requests.Add(1)
+	s.begin(5)
 	s.mu.Unlock()
 	if err := <-result; !errors.Is(err, ErrSuperseded) {
 		t.Fatalf("stale request: %v", err)
@@ -380,5 +380,19 @@ func TestKeyframesBySeekingMatchAFullScan(t *testing.T) {
 				t.Fatalf("keyframes %v, full scan %v", got, want)
 			}
 		})
+	}
+}
+
+// Only a newer request for another segment supersedes a request (#74).
+func TestSupersededOnlyByAnotherSegment(t *testing.T) {
+	var s session
+	a := s.begin(3)
+	b := s.begin(3)
+	if s.superseded(a, 3) || s.superseded(b, 3) {
+		t.Fatal("a request for the same segment superseded another")
+	}
+	c := s.begin(7)
+	if !s.superseded(a, 3) || !s.superseded(b, 3) || s.superseded(c, 7) {
+		t.Fatal("a request for another segment did not supersede the older ones")
 	}
 }

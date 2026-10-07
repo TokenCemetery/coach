@@ -115,9 +115,41 @@ type session struct {
 	// lastRequest is read by the job's list reader, which must not take mu:
 	// stopJob holds mu while it waits for the job to exit.
 	lastRequest atomic.Int64
-	// requests counts segment requests; only the newest may restart the job,
-	// so a stale request that reaches the lock late cannot undo a seek.
-	requests atomic.Int64
+	// newest numbers segment requests in its high 32 bits and holds the
+	// segment of the newest one in the low 32 bits, so the pair is read and
+	// written together. Only a request for the newest one's segment may
+	// restart the job: a stale request that reaches the lock late cannot undo
+	// a seek, and concurrent requests for one segment do not fail each other.
+	newest atomic.Uint64
+}
+
+const segmentBits = 1<<32 - 1
+
+// segmentOf is n in the low bits of session.newest; out-of-range values,
+// which the playlist never names, share one value.
+func segmentOf(n int) uint64 {
+	if n < 0 || n >= segmentBits {
+		return segmentBits
+	}
+	return uint64(n)
+}
+
+// begin registers a request for segment n as the newest and returns it.
+func (s *session) begin(n int) uint64 {
+	for {
+		old := s.newest.Load()
+		next := (old>>32+1)<<32 | segmentOf(n)
+		if s.newest.CompareAndSwap(old, next) {
+			return next
+		}
+	}
+}
+
+// superseded reports whether a newer request than request asked for another
+// segment than n.
+func (s *session) superseded(request uint64, n int) bool {
+	newest := s.newest.Load()
+	return newest != request && newest&segmentBits != segmentOf(n)
 }
 
 type job struct {
@@ -368,7 +400,7 @@ func (m *Manager) Segment(ctx context.Context, id, owner string, source Source, 
 	if err != nil {
 		return nil, err
 	}
-	request := s.requests.Add(1)
+	request := s.begin(n)
 	bounds, start, err := m.bounds(ctx, source)
 	if err != nil {
 		return nil, err
@@ -389,7 +421,7 @@ func (m *Manager) Segment(ctx context.Context, id, owner string, source Source, 
 		// Restart on a seek outside the job's reach, after it exited, or for
 		// a segment already pruned behind the playback position.
 		if !s.reaches(j, n) {
-			if s.requests.Load() != request {
+			if s.superseded(request, n) {
 				s.mu.Unlock()
 				return nil, ErrSuperseded
 			}
