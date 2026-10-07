@@ -29,8 +29,8 @@ type transcodingProfile struct {
 
 // remuxCodecs returns the codecs of an HLS remux the profile accepts: the
 // video is copied, and the audio is copied when its codec is accepted and
-// encoded to AAC otherwise. Video transcoding is not implemented (#22), so a
-// video codec, profile or bitrate the client rejects rules remux out.
+// encoded to AAC otherwise. A video codec, profile or bitrate the client
+// rejects rules remux out; transcodeCodecs covers that case.
 func (p playbackRequest) remuxCodecs(item media.Item, video, audio *media.Stream) (videoCodec, audioCodec string, channels int, ok bool) {
 	if video == nil || p.DeviceProfile == nil || !p.withinBitrate(item) {
 		return "", "", 0, false
@@ -60,6 +60,68 @@ func (p playbackRequest) remuxCodecs(item media.Item, video, audio *media.Stream
 	return "", "", 0, false
 }
 
+// transcodeCodecs returns the audio codec of an HLS stream whose video is
+// encoded to H.264, when the profile accepts H.264 in HLS, and the video
+// bitrate cap. The audio is copied or encoded to AAC as in remuxCodecs. The
+// encoded video's own codec profile is not checked: it is 8-bit H.264 at the
+// source's size.
+func (p playbackRequest) transcodeCodecs(item media.Item, video, audio *media.Stream) (audioCodec string, channels int, videoBitrate int64, ok bool) {
+	if video == nil || p.DeviceProfile == nil {
+		return "", 0, 0, false
+	}
+	videoBitrate = p.transcodeBitrate(item)
+	if videoBitrate < 0 {
+		return "", 0, 0, false
+	}
+	for _, tp := range p.DeviceProfile.TranscodingProfiles {
+		if !strings.EqualFold(tp.Type, "Video") || !strings.EqualFold(tp.Protocol, "hls") || !strings.EqualFold(tp.Container, "ts") || !member(tp.VideoCodec, "h264") {
+			continue
+		}
+		switch {
+		case audio == nil:
+			return "", 0, videoBitrate, true
+		case member(tp.AudioCodec, audio.Codec) && p.audioChannelsAllowed(audio):
+			return audio.Codec, 0, videoBitrate, true
+		case member(tp.AudioCodec, "aac"):
+			return "aac", encodedChannels(audio.Channels, p.MaxAudioChannels), videoBitrate, true
+		}
+	}
+	return "", 0, 0, false
+}
+
+// Without a client limit, an encoded video of unknown bitrate is capped at
+// defaultVideoBitrate; audioAllowance is left from a client limit for audio,
+// and the cap is never below minVideoBitrate.
+const (
+	defaultVideoBitrate = 8_000_000
+	audioAllowance      = 192_000
+	minVideoBitrate     = 100_000
+)
+
+// transcodeBitrate caps the encoded video at the source's bitrate and the
+// client's limit less room for audio, or returns -1 for a negative limit.
+// The result is positive otherwise, so VideoBitrate marks an encoded stream.
+func (p playbackRequest) transcodeBitrate(item media.Item) int64 {
+	rate := bitrate(item)
+	if rate <= 0 {
+		rate = defaultVideoBitrate
+	}
+	limits := []*int64{p.MaxStreamingBitrate}
+	if p.DeviceProfile != nil {
+		limits = append(limits, p.DeviceProfile.MaxStreamingBitrate)
+	}
+	for _, limit := range limits {
+		switch {
+		case limit == nil || *limit == 0:
+		case *limit < 0:
+			return -1
+		default:
+			rate = min(rate, max(*limit-audioAllowance, *limit/2))
+		}
+	}
+	return max(rate, minVideoBitrate)
+}
+
 // encodedChannels keeps the source layout up to the client's limit, or
 // stereo when the client sets none.
 func encodedChannels(source int, limit *int64) int {
@@ -73,12 +135,17 @@ func encodedChannels(source int, limit *int64) int {
 	return min(source, most)
 }
 
-func transcodingURL(item media.Item, deviceID, playSession, token, videoCodec, audioCodec string, audio *media.Stream, channels int) string {
+// transcodingURL names the HLS stream; a videoBitrate above zero means the
+// video is encoded to videoCodec at most at that rate rather than copied.
+func transcodingURL(item media.Item, deviceID, playSession, token, videoCodec, audioCodec string, audio *media.Stream, channels int, videoBitrate int64) string {
 	query := url.Values{}
 	query.Set("MediaSourceId", "mediasource_"+item.ID)
 	query.Set("PlaySessionId", playSession)
 	query.Set("api_key", token)
 	query.Set("VideoCodec", videoCodec)
+	if videoBitrate > 0 {
+		query.Set("VideoBitrate", strconv.FormatInt(videoBitrate, 10))
+	}
 	if audio != nil {
 		query.Set("AudioCodec", audioCodec)
 		query.Set("AudioStreamIndex", strconv.Itoa(audio.Index))
@@ -99,11 +166,13 @@ func remuxSource(catalog *media.Catalog, item media.Item, video *media.Stream) h
 		VideoStream: video.Index, AudioStream: -1}
 }
 
-// hlsSource derives the remux from an HLS request's query, so that the
+// hlsSource derives the stream from an HLS request's query, so that the
 // master playlist, media playlist and segments each work on their own. Emby
 // Web sends PlaySessionId and the codecs; for a client that omits them the
 // session is keyed by its token and stream, the video is copied and the audio
-// is copied when it is AAC or MP3. On failure the response has been written.
+// is copied when it is AAC or MP3. The video is encoded to H.264 when the
+// query sets VideoBitrate or its codecs exclude the source's but include
+// H.264. On failure the response has been written.
 func (s *Server) hlsSource(w http.ResponseWriter, r *http.Request, session state.Session) (playSession string, source hls.Source, ok bool) {
 	if s.hls == nil {
 		fail(w, 404, "NotFound")
@@ -138,12 +207,25 @@ func (s *Server) hlsSource(w http.ResponseWriter, r *http.Request, session state
 		fail(w, 400, "InvalidRequest")
 		return "", source, false
 	}
-	if codecs := query.Get("VideoCodec"); codecs != "" && !member(codecs, video.Codec) {
-		// Copy is the only video path: transcoding is not implemented (#22).
-		failText(w, 400, "Coach can only remux this video, and the requested codecs exclude its "+video.Codec+" video.")
-		return "", source, false
-	}
 	source = remuxSource(s.catalog(), item, video)
+	if text := query.Get("VideoBitrate"); text != "" {
+		n, err := strconv.ParseInt(text, 10, 64)
+		if err != nil || n <= 0 {
+			fail(w, 400, "InvalidRequest")
+			return "", source, false
+		}
+		source.VideoEncode, source.VideoBitrate = true, n
+	}
+	if codecs := query.Get("VideoCodec"); codecs != "" && !member(codecs, video.Codec) {
+		if !member(codecs, "h264") {
+			failText(w, 400, "Coach encodes video only to H.264, and the requested codecs exclude it and the source's "+video.Codec+".")
+			return "", source, false
+		}
+		source.VideoEncode = true
+	}
+	if source.VideoEncode && source.VideoBitrate == 0 {
+		source.VideoBitrate = playbackRequest{}.transcodeBitrate(item)
+	}
 	if audio != nil {
 		source.AudioStream = audio.Index
 		codecs := query.Get("AudioCodec")
@@ -203,6 +285,9 @@ func (s *Server) masterPlaylist(w http.ResponseWriter, r *http.Request, token st
 	}
 	item, _ := s.findItem(source.ItemID)
 	bandwidth := bitrate(item)
+	if source.VideoEncode {
+		bandwidth = source.VideoBitrate + audioAllowance
+	}
 	if bandwidth <= 0 {
 		bandwidth = 1_000_000
 	}

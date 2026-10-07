@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -67,23 +68,39 @@ func TestPlaybackInfoRemux(t *testing.T) {
 	if q.Get("AudioCodec") != "aac" || q.Get("AudioStreamIndex") != "1" || q.Get("MaxAudioChannels") != "2" {
 		t.Fatalf("ac3 remux query %v", q)
 	}
-	// Video the profile rejects needs transcoding, which is not implemented.
+	// Video the profile rejects is encoded to H.264, capped at the source's
+	// bitrate or the client's limit less room for audio.
+	for name, test := range map[string]struct {
+		profile, bitrate string
+	}{
+		"level":   {strings.Replace(hlsProfile, `"Value":"51"`, `"Value":"40"`, 1), strconv.FormatInt(bitrate(movie), 10)},
+		"bitrate": {strings.Replace(hlsProfile, `{"DirectPlayProfiles"`, `{"MaxStreamingBitrate":1000000,"DirectPlayProfiles"`, 1), "808000"},
+	} {
+		if q := transcoding(info("", test.profile)); q.Get("VideoCodec") != "h264" || q.Get("VideoBitrate") != test.bitrate || q.Get("AudioCodec") != "aac" {
+			t.Fatalf("%s: transcoding query %v", name, q)
+		}
+	}
+	// Coach encodes only to H.264 and only into HLS.
 	for name, profile := range map[string]string{
-		"codec":   strings.Replace(hlsProfile, `"h264,hevc"`, `"hevc"`, 1),
-		"level":   strings.Replace(hlsProfile, `"Value":"51"`, `"Value":"40"`, 1),
-		"no hls":  strings.Replace(hlsProfile, `"Protocol":"hls"`, `"Protocol":"http"`, 1),
-		"bitrate": strings.Replace(hlsProfile, `{"DirectPlayProfiles"`, `{"MaxStreamingBitrate":1000,"DirectPlayProfiles"`, 1),
+		"codec":  strings.Replace(hlsProfile, `"h264,hevc"`, `"hevc"`, 1),
+		"no hls": strings.Replace(hlsProfile, `"Protocol":"hls"`, `"Protocol":"http"`, 1),
 	} {
 		if source := info("", profile); source["ErrorCode"] != "NoCompatibleStream" || source["TranscodingUrl"] != nil {
 			t.Fatalf("%s: %v", name, source)
 		}
 	}
-	// HLS requests are refused for an item the catalog lacks or a codec the
-	// remux cannot copy.
+	// HLS requests are refused for an item the catalog lacks, a codec list
+	// without the source's codec or H.264, or a bad bitrate.
 	expectStatus(t, request(h, "GET", "/Videos/missing/master.m3u8?PlaySessionId=a", "", "", token), 404)
 	expectStatus(t, request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=a&VideoCodec=hevc", "", "", token), 400)
+	expectStatus(t, request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=a&VideoBitrate=0", "", "", token), 400)
+	w := request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=t&VideoCodec=h264&VideoBitrate=1000000", "", "", token)
+	expectStatus(t, w, 200)
+	if body := w.Body.String(); !strings.HasPrefix(body, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1192000\n") {
+		t.Fatalf("transcoding master playlist %q", body)
+	}
 	expectStatus(t, request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=a", "", "", ""), 401)
-	w := request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=a&VideoCodec=h264", "", "", token)
+	w = request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=a&VideoCodec=h264", "", "", token)
 	expectStatus(t, w, 200)
 	if body := w.Body.String(); !strings.HasPrefix(body, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=") || !strings.Contains(body, "\nmain.m3u8?PlaySessionId=a&VideoCodec=h264\n") {
 		t.Fatalf("master playlist %q", body)

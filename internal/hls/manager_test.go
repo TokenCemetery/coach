@@ -140,20 +140,95 @@ func TestRemuxSegmentsMatchThePlan(t *testing.T) {
 			if _, err := m.Segment(ctx, "a", "other", source, 0); !errors.Is(err, ErrConflict) {
 				t.Fatalf("foreign owner: %v", err)
 			}
-			if _, err := m.Playlist(ctx, "c", "owner", source, strconv.Itoa); !errors.Is(err, ErrBusy) || m.Available("c") {
+			if _, err := m.Playlist(ctx, "c", "owner", source, strconv.Itoa); !errors.Is(err, ErrBusy) || m.Available("c", false) {
 				t.Fatalf("third session: %v", err)
 			}
 			m.Stop("a", "other")
-			if m.Available("c") {
+			if m.Available("c", false) {
 				t.Fatal("a foreign owner stopped a session")
 			}
 			m.Stop("a", "owner")
-			if !m.Available("c") {
+			if !m.Available("c", false) {
 				t.Fatal("session a not stopped")
 			}
 			m.StopOwner("owner")
-			if entries, _ := os.ReadDir(dir); len(entries) != 0 || !m.Available("c") {
+			if entries, _ := os.ReadDir(dir); len(entries) != 0 || !m.Available("c", false) {
 				t.Fatalf("stopped sessions left %d entries", len(entries))
+			}
+		})
+	}
+}
+
+// hevcFixture builds a 40-second 10-bit HEVC video with odd dimensions,
+// closed GOPs of 2.6 seconds and AC3 audio that starts half a second before
+// the video.
+func hevcFixture(t *testing.T, name string) string {
+	t.Helper()
+	path := fixture(t, "avc.mkv") // skips without FFmpeg
+	path = filepath.Join(filepath.Dir(path), name)
+	build := exec.CommandContext(context.Background(), "ffmpeg", "-v", "error", "-nostdin", //nolint:gosec // fixed arguments and temp paths
+		"-itsoffset", "0.5", "-f", "lavfi", "-i", "testsrc2=s=161x121:d=40:r=25", "-f", "lavfi", "-i", "sine=d=41",
+		"-c:v", "libx265", "-pix_fmt", "yuv420p10le", "-x265-params", "log-level=error:keyint=65:min-keyint=65:scenecut=0:open-gop=0", "-c:a", "ac3", path)
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Skipf("cannot build HEVC fixture: %v %s", err, out)
+	}
+	return path
+}
+
+func TestTranscodeSegmentsMatchThePlan(t *testing.T) {
+	for _, name := range []string{"in.mkv", "in.ts"} {
+		t.Run(name, func(t *testing.T) {
+			path := hevcFixture(t, name)
+			m, err := NewManager("ffmpeg", "ffprobe", filepath.Join(t.TempDir(), "transcode"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			source := Source{ItemID: "movie", Version: "1", Duration: 40, VideoStream: 0, VideoEncode: true, VideoBitrate: 1_000_000,
+				AudioStream: 1, AudioEncode: true, AudioChannels: 2, Open: func() (*os.File, error) { return os.Open(path) }}
+			ctx := context.Background()
+			bounds, _, err := m.bounds(ctx, source)
+			if err != nil || len(bounds) < 5 {
+				t.Fatalf("bounds %v: %v", bounds, err)
+			}
+			sequential := make([]float64, len(bounds))
+			for n := range bounds {
+				file, err := m.Segment(ctx, "a", "owner", source, n)
+				if err != nil {
+					t.Fatalf("segment %d: %v", n, err)
+				}
+				if n == 1 {
+					out, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0", //nolint:gosec // test segment path
+						"-show_entries", "stream=codec_name,pix_fmt,width", "-of", "csv=p=0", file.Name()).Output()
+					// MPEG-TS lists the stream again under its program.
+					if got, _, _ := strings.Cut(string(out), "\n"); err != nil || got != "h264,160,yuv420p" {
+						t.Fatalf("segment video %q: %v", got, err)
+					}
+				}
+				sequential[n] = firstVideoPTS(t, file)
+			}
+			// Keyframes are forced on the plan, so every segment but the
+			// first (see TestRemuxSegmentsMatchThePlan) starts on it exactly.
+			for n := 2; n < len(bounds); n++ {
+				if got, want := sequential[n]-sequential[1], bounds[n]-bounds[1]; math.Abs(got-want) > 0.002 {
+					t.Fatalf("segment %d starts at %+.3f from segment 1, plan %+.3f", n, got, want)
+				}
+			}
+			// One transcoding session at a time; remux sessions are counted
+			// apart.
+			if _, err := m.Playlist(ctx, "b", "owner", source, strconv.Itoa); !errors.Is(err, ErrBusy) || m.Available("b", true) || !m.Available("b", false) {
+				t.Fatalf("second transcoding session: %v", err)
+			}
+			m.Stop("a", "owner")
+			// After a seek, a restarted job writes the same segments.
+			for _, n := range []int{3, 1} {
+				file, err := m.Segment(ctx, "b", "owner", source, n)
+				if err != nil {
+					t.Fatalf("restart at %d: %v", n, err)
+				}
+				if got := firstVideoPTS(t, file); math.Abs(got-sequential[n]) > 0.002 {
+					t.Fatalf("restarted segment %d starts at %.3f, sequential %.3f", n, got, sequential[n])
+				}
 			}
 		})
 	}

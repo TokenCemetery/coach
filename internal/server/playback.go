@@ -101,17 +101,24 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 		subtitle = -1
 	}
 	direct := body.supportsDirectStream(item, video, audio)
-	// Remux to HLS when the client cannot take the file as it is.
+	// Remux to HLS when the client cannot take the file as it is, and encode
+	// the video to H.264 when it cannot take the video either.
 	var transcoding string
 	remuxBusy := false
 	if !direct && s.hls != nil {
-		if videoCodec, audioCodec, channels, ok := body.remuxCodecs(item, video, audio); ok {
-			if s.hls.Available(playSession) {
-				transcoding = transcodingURL(item, session.DeviceID, playSession, token, videoCodec, audioCodec, audio, channels)
-				s.hls.Prepare(remuxSource(catalog, item, video))
-			} else {
-				remuxBusy = true
-			}
+		videoCodec, audioCodec, channels, ok := body.remuxCodecs(item, video, audio)
+		var videoBitrate int64
+		if !ok {
+			audioCodec, channels, videoBitrate, ok = body.transcodeCodecs(item, video, audio)
+			videoCodec = "h264"
+		}
+		switch {
+		case !ok:
+		case s.hls.Available(playSession, videoBitrate > 0):
+			transcoding = transcodingURL(item, session.DeviceID, playSession, token, videoCodec, audioCodec, audio, channels, videoBitrate)
+			s.hls.Prepare(remuxSource(catalog, item, video))
+		default:
+			remuxBusy = true
 		}
 	}
 	source["SupportsDirectPlay"] = false

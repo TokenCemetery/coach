@@ -21,6 +21,9 @@ import (
 const (
 	// MaxSessions caps concurrent remux sessions (one FFmpeg job each).
 	MaxSessions = 2
+	// MaxTranscodes caps concurrent sessions that encode the video, on top of
+	// MaxSessions.
+	MaxTranscodes = 1
 	// maxSessionBytes caps the segments a session keeps on disk.
 	maxSessionBytes = 2 << 30
 	// A job pauses (SIGSTOP) when it has finished maxLead segments past the
@@ -39,7 +42,8 @@ const (
 )
 
 var (
-	// ErrBusy means MaxSessions sessions are already open.
+	// ErrBusy means MaxSessions remux or MaxTranscodes transcoding sessions
+	// are already open.
 	ErrBusy = errors.New("too many HLS sessions")
 	// ErrConflict means the session ID is in use for another source.
 	ErrConflict = errors.New("HLS session belongs to another stream")
@@ -61,6 +65,10 @@ type Source struct {
 	// Duration in seconds.
 	Duration    float64
 	VideoStream int
+	// VideoEncode encodes the video to 8-bit H.264 at most VideoBitrate bits
+	// per second instead of copying it.
+	VideoEncode  bool
+	VideoBitrate int64
 	// AudioStream is -1 for none. Audio is copied, or encoded to AAC with
 	// AudioChannels channels when AudioEncode is set.
 	AudioStream   int
@@ -71,7 +79,7 @@ type Source struct {
 // Key identifies what the session produces; a session ID cannot be reused
 // for another key.
 func (s Source) Key() string {
-	return fmt.Sprintf("%s/%d/%d/%t/%d", s.ItemID, s.VideoStream, s.AudioStream, s.AudioEncode, s.AudioChannels)
+	return fmt.Sprintf("%s/%d/%t/%d/%d/%t/%d", s.ItemID, s.VideoStream, s.VideoEncode, s.VideoBitrate, s.AudioStream, s.AudioEncode, s.AudioChannels)
 }
 
 // Manager owns HLS sessions and their FFmpeg jobs. Segments live in
@@ -183,13 +191,32 @@ func (m *Manager) reap() {
 	}
 }
 
-// Available reports whether a new session could be opened now, or id is
-// already open.
-func (m *Manager) Available(id string) bool {
+// Available reports whether a new session that encodes the video or not could
+// be opened now, or id is already open.
+func (m *Manager) Available(id string, encode bool) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	_, open := m.sessions[id]
-	return open || len(m.sessions) < MaxSessions
+	return open || m.count(encode) < limit(encode)
+}
+
+// count returns the open sessions that encode the video or not. Caller holds
+// m.mu.
+func (m *Manager) count(encode bool) int {
+	n := 0
+	for _, s := range m.sessions {
+		if s.source.VideoEncode == encode {
+			n++
+		}
+	}
+	return n
+}
+
+func limit(encode bool) int {
+	if encode {
+		return MaxTranscodes
+	}
+	return MaxSessions
 }
 
 // Stop ends the session if owner opened it: its job is killed and its
@@ -305,7 +332,7 @@ func (m *Manager) open(id, owner string, source Source) (*session, error) {
 		}
 		return s, nil
 	}
-	if len(m.sessions) >= MaxSessions {
+	if m.count(source.VideoEncode) >= limit(source.VideoEncode) {
 		return nil, ErrBusy
 	}
 	dir, err := os.MkdirTemp(m.dir, "session-")
@@ -476,7 +503,12 @@ func (s *session) startJob(ffmpeg string, bounds []float64, start float64, n int
 	}
 	defer func() { _ = file.Close() }()
 	args := []string{"-v", "error", "-nostdin", "-protocol_whitelist", "fd"}
-	if n > 0 {
+	switch {
+	case n > 0 && s.source.VideoEncode:
+		// Decoding drops frames before -ss, which counts from the file's
+		// start time; an absolute -ss would count it twice.
+		args = append(args, "-ss", strconv.FormatFloat(bounds[n]-0.001, 'f', 6, 64))
+	case n > 0:
 		// Seek just before the segment's keyframe; -copypriorss 0 drops what
 		// the demuxer returns before it, so the job starts on that keyframe.
 		// FFmpeg compares that cutoff with absolute timestamps, so -ss is
@@ -488,7 +520,11 @@ func (s *session) startJob(ffmpeg string, bounds []float64, start float64, n int
 	if s.source.AudioStream >= 0 {
 		args = append(args, "-map", "0:"+strconv.Itoa(s.source.AudioStream))
 	}
-	args = append(args, "-c:v", "copy")
+	if s.source.VideoEncode {
+		args = append(args, encodeVideo(bounds[n:], start, s.source.VideoBitrate)...)
+	} else {
+		args = append(args, "-c:v", "copy")
+	}
 	if s.source.AudioEncode {
 		args = append(args, "-c:a", "aac", "-ac", strconv.Itoa(s.source.AudioChannels))
 	} else {
@@ -497,7 +533,7 @@ func (s *session) startJob(ffmpeg string, bounds []float64, start float64, n int
 	// Keep source timestamps so that segments of a restarted job line up with
 	// those of the first. Segment times count from the job's first packet.
 	args = append(args, "-copyts", "-avoid_negative_ts", "disabled")
-	if n > 0 {
+	if n > 0 && !s.source.VideoEncode {
 		args = append(args, "-copypriorss", "0")
 	}
 	args = append(args, "-f", "segment", "-segment_format", "mpegts", "-segment_start_number", strconv.Itoa(n))
@@ -549,6 +585,27 @@ func (s *session) startJob(ffmpeg string, bounds []float64, start float64, n int
 	}()
 	go s.watch(j)
 	return nil
+}
+
+// encodeVideo returns the FFmpeg options that encode the video to 8-bit
+// H.264 for the segments starting at bounds, relative to the file's start
+// time. Keyframes are forced on the source's keyframe plan, so the segments
+// match those of a remux. The encoder keeps the source's time base (demux):
+// with the frame rate's, timestamps are rounded and a forced keyframe can
+// land one frame late.
+func encodeVideo(bounds []float64, start float64, maxBitrate int64) []string {
+	keyframes := make([]string, len(bounds))
+	for i, b := range bounds {
+		keyframes[i] = strconv.FormatFloat(start+b-0.001, 'f', 6, 64)
+	}
+	args := []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+		"-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-enc_time_base:v", "demux", "-fps_mode", "passthrough",
+		"-force_key_frames", strings.Join(keyframes, ",")}
+	if maxBitrate > 0 {
+		rate := strconv.FormatInt(maxBitrate, 10)
+		args = append(args, "-maxrate", rate, "-bufsize", strconv.FormatInt(2*maxBitrate, 10))
+	}
+	return args
 }
 
 // follow records each segment FFmpeg finishes and pauses the job (SIGSTOP)
