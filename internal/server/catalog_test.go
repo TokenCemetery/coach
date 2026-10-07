@@ -82,7 +82,7 @@ func TestMovieCatalog(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &latest); err != nil || len(latest) != 1 || latest[0].Id != "b" {
 		t.Fatal("latest response is incorrect")
 	}
-	for _, query := range []string{"Limit=-1", "Limit=1001", "StartIndex=bad", "StartIndex=999999999999999999999", "Limit=1&limit=2", "Recursive=yes", "SortBy=Random", "SortOrder=oops", "PersonIds=x", "Filters=IsResumable"} {
+	for _, query := range []string{"Limit=-1", "Limit=1001", "StartIndex=bad", "StartIndex=999999999999999999999", "Limit=1&limit=2", "Recursive=yes", "SortBy=Studio", "SortOrder=oops", "PersonIds=x", "Filters=IsResumable"} {
 		expectStatus(t, request(h, "GET", "/Items?"+query, "", "", token), 400)
 	}
 	// Coach has no genres: a genre filter is accepted and matches nothing,
@@ -166,5 +166,85 @@ func TestItemsQueriesFromEmbyWeb(t *testing.T) {
 	expectStatus(t, w, 200)
 	if !strings.Contains(w.Body.String(), `"TotalRecordCount":0`) {
 		t.Fatalf("TV channels: %s", w.Body.String())
+	}
+}
+
+// Every sort Emby Web's library menus offer answers 200 (#79).
+func TestLibraryMenuSorts(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	day := func(d int) time.Time { return time.Date(2026, 1, d, 0, 0, 0, 0, time.UTC) }
+	catalog := &media.Catalog{ID: "movies", Items: []media.Item{
+		{ID: "big", Name: "Alpha", Container: "mkv", Size: 300, RunTimeTicks: 10000000, Added: day(1),
+			Streams: []media.Stream{{Type: "Video", Codec: "hevc", Width: 3840, Height: 2160, AverageFrameRate: 24}}},
+		{ID: "small", Name: "Beta", Container: "avi", Size: 100, RunTimeTicks: 10000000, Added: day(2),
+			Streams: []media.Stream{{Type: "Video", Codec: "mpeg4", Width: 640, Height: 360, AverageFrameRate: 25}}},
+		{ID: "mid", Name: "Gamma", Container: "mp4", Size: 200, RunTimeTicks: 10000000, Added: day(3),
+			Streams: []media.Stream{{Type: "Video", Codec: "h264", Width: 1920, Height: 1080, AverageFrameRate: 30}}},
+		{ID: "old", Kind: "Episode", Name: "Old S01E01", SeriesID: "old-series", SeasonID: "old-season", ParentID: "old-season", SeasonNumber: 1, EpisodeNumber: 1, Added: day(9)},
+		{ID: "new", Kind: "Episode", Name: "New S01E01", SeriesID: "new-series", SeasonID: "new-season", ParentID: "new-season", SeasonNumber: 1, EpisodeNumber: 1, Added: day(5)},
+	}}
+	catalog.Folders = []media.Item{
+		{ID: "old-series", Kind: "Series", Name: "A Show", ParentID: catalog.SeriesLibraryID()},
+		{ID: "new-series", Kind: "Series", Name: "B Show", ParentID: catalog.SeriesLibraryID()},
+	}
+	h := New(store, "test", nil, catalog).Handler()
+	token := login(t, h)
+	user := store.Snapshot().User.ID
+	order := func(query string) string {
+		t.Helper()
+		w := request(h, "GET", "/Users/"+user+"/Items?Recursive=true&"+query, "", "", token)
+		expectStatus(t, w, 200)
+		var page struct{ Items []struct{ Id string } }
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		ids := []string{}
+		for _, item := range page.Items {
+			ids = append(ids, item.Id)
+		}
+		return strings.Join(ids, ",")
+	}
+	// Watch "small" twice and the newer series' episode last.
+	report := func(id, play string) {
+		t.Helper()
+		body := `{"ItemId":"` + id + `","PlaySessionId":"` + play + `","PositionTicks":0}`
+		expectStatus(t, request(h, "POST", "/Sessions/Playing", "application/json", body, token), 204)
+	}
+	report("small", "p1")
+	report("small", "p2")
+	report("old", "p3")
+	report("new", "p4")
+	movies := "IncludeItemTypes=Movie&SortBy="
+	for sort, want := range map[string]string{
+		"TotalBitrate,SortName":                "small,mid,big",
+		"VideoCodec,SortName":                  "mid,big,small",
+		"Container,SortName":                   "small,big,mid",
+		"Size,SortName":                        "small,mid,big",
+		"Resolution,SortName":                  "small,mid,big",
+		"Framerate,SortName":                   "big,small,mid",
+		"PlayCount,SortName":                   "big,mid,small",
+		"Runtime,SortName":                     "big,small,mid",
+		"OfficialRating,SortName":              "big,small,mid",
+		"ProductionYear,PremiereDate,SortName": "big,small,mid",
+		"CommunityRating,SortName":             "big,small,mid",
+		"CriticRating,SortName":                "big,small,mid",
+		"Director,SortName":                    "big,small,mid",
+	} {
+		if got := order(movies + sort); got != want {
+			t.Fatalf("SortBy=%s: %s, want %s", sort, got, want)
+		}
+	}
+	if got := strings.Split(order(movies+"Random"), ","); len(got) != 3 || !slices.Contains(got, "big") || !slices.Contains(got, "small") || !slices.Contains(got, "mid") {
+		t.Fatalf("Random: %v", got)
+	}
+	series := "IncludeItemTypes=Series&SortBy="
+	for sort, want := range map[string]string{
+		"DateLastContentAdded,SortName":    "new-series,old-series",
+		"SeriesDatePlayed,SortName":        "old-series,new-series",
+		"LastContentPremiereDate,SortName": "old-series,new-series",
+	} {
+		if got := order(series + sort); got != want {
+			t.Fatalf("SortBy=%s: %s, want %s", sort, got, want)
+		}
 	}
 }

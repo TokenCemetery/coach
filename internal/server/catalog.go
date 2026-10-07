@@ -3,6 +3,7 @@ package server
 import (
 	"cmp"
 	"errors"
+	"math/rand/v2"
 	"net/http"
 	"path"
 	"slices"
@@ -288,7 +289,9 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 	}
 	sortKeys := strings.Split(sortBy, ",")
 	for _, key := range sortKeys {
-		if !member("sortname,name,datecreated,dateplayed,runtime,indexnumber,parentindexnumber,datelastsearched,isfolder,filename,seriessortname,channelnumber", key) {
+		if !member("sortname,name,datecreated,dateplayed,runtime,indexnumber,parentindexnumber,datelastsearched,isfolder,filename,seriessortname,channelnumber,"+
+			"totalbitrate,videocodec,container,size,resolution,framerate,playcount,random,seriesdateplayed,datelastcontentadded,"+
+			"officialrating,productionyear,premieredate,communityrating,criticrating,director,lastcontentpremieredate", key) {
 			fail(w, 400, "UnsupportedSort")
 			return
 		}
@@ -415,6 +418,42 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 		respond(w, 200, object{"Items": result, "TotalRecordCount": len(result)})
 		return
 	}
+	// A series or season sorts by its episodes for the newest added and the
+	// last watched one.
+	newestAdded, seriesPlayed := map[string]time.Time{}, map[string]time.Time{}
+	if catalog != nil {
+		for _, episode := range catalog.Items {
+			played := snapshot.User.Items[episode.ID].LastPlayed
+			for _, folder := range []string{episode.SeriesID, episode.SeasonID} {
+				if folder == "" {
+					continue
+				}
+				if episode.Added.After(newestAdded[folder]) {
+					newestAdded[folder] = episode.Added
+				}
+				if played.After(seriesPlayed[folder]) {
+					seriesPlayed[folder] = played
+				}
+			}
+		}
+	}
+	added := func(item *media.Item) time.Time {
+		if t, ok := newestAdded[item.ID]; ok {
+			return t
+		}
+		return item.Added
+	}
+	video := func(item *media.Item) media.Stream {
+		for _, stream := range item.Streams {
+			if stream.Type == "Video" {
+				return stream
+			}
+		}
+		return media.Stream{}
+	}
+	if sortKeys[0] == "random" {
+		rand.Shuffle(len(items), func(i, j int) { items[i], items[j] = items[j], items[i] }) //nolint:gosec // a display order, not a secret
+	}
 	slices.SortFunc(items, func(a, b *media.Item) int {
 		comparison := 0
 		// Keys are compared in order; SortOrder applies to all of them.
@@ -439,8 +478,32 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 				comparison = strings.Compare(strings.ToLower(path.Base(a.Path)), strings.ToLower(path.Base(b.Path)))
 			case "seriessortname":
 				comparison = strings.Compare(strings.ToLower(a.SeriesName), strings.ToLower(b.SeriesName))
-			case "channelnumber":
-				// Coach has no channels: no item has a channel number (#76).
+			case "totalbitrate":
+				comparison = cmp.Compare(bitrate(*a), bitrate(*b))
+			case "videocodec":
+				comparison = strings.Compare(video(a).Codec, video(b).Codec)
+			case "container":
+				comparison = strings.Compare(strings.ToLower(a.Container), strings.ToLower(b.Container))
+			case "size":
+				comparison = cmp.Compare(a.Size, b.Size)
+			case "resolution":
+				comparison = cmp.Compare(video(a).Width*video(a).Height, video(b).Width*video(b).Height)
+			case "framerate":
+				comparison = cmp.Compare(video(a).AverageFrameRate, video(b).AverageFrameRate)
+			case "playcount":
+				comparison = cmp.Compare(snapshot.User.Items[a.ID].PlayCount, snapshot.User.Items[b.ID].PlayCount)
+			case "seriesdateplayed":
+				comparison = seriesPlayed[a.ID].Compare(seriesPlayed[b.ID])
+			case "datelastcontentadded":
+				comparison = added(a).Compare(added(b))
+			case "random":
+				// The items were shuffled above; a later key cannot reshuffle.
+				if key == sortKeys[0] {
+					return 0
+				}
+			case "channelnumber", "officialrating", "productionyear", "premieredate", "communityrating", "criticrating", "director", "lastcontentpremieredate":
+				// Coach has no channels and no such metadata: every item
+				// compares equal and the next key decides (#76, #79).
 				comparison = 0
 			default:
 				comparison = strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))

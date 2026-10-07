@@ -289,7 +289,8 @@ func TestLibraryTabRequests(t *testing.T) {
 	if strings.TrimSpace(w.Body.String()) != "[]" {
 		t.Fatal("recommendations are not empty:", w.Body.String())
 	}
-	expectStatus(t, request(h, "GET", user+"/Items?SortBy=Random", "", "", token), 400)
+	// Random is a menu sort (#79); a key no menu offers is still rejected.
+	expectStatus(t, request(h, "GET", user+"/Items?SortBy=Studio", "", "", token), 400)
 }
 
 func TestMarkSeriesPlayed(t *testing.T) {
