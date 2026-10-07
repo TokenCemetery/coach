@@ -89,3 +89,38 @@ func TestPlaybackInfoRemux(t *testing.T) {
 		t.Fatalf("master playlist %q", body)
 	}
 }
+
+func TestStopActiveEncodings(t *testing.T) {
+	store, _, dir := newTestServer(t)
+	movie := playbackMovie()
+	movie.Container = "mkv"
+	server := New(store, "test", nil, &media.Catalog{ID: "movies", Items: []media.Item{movie}})
+	m, err := hls.NewManager("ffmpeg", "ffprobe", filepath.Join(dir, "transcode"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	server.SetHLS(m)
+	h := server.Handler()
+	token := login(t, h)
+	// A media playlist request opens the session, even if the stream fails.
+	busy := func(id string) bool {
+		return request(h, "GET", "/Videos/movie/main.m3u8?VideoCodec=h264&PlaySessionId="+id, "", "", token).Code == 503
+	}
+	fill := func() {
+		t.Helper()
+		if busy("a") || busy("b") || !busy("c") {
+			t.Fatalf("want %d open sessions and the next one refused", hls.MaxSessions)
+		}
+	}
+	fill()
+	expectStatus(t, request(h, "POST", "/Videos/ActiveEncodings/Delete?PlaySessionId=a", "", "", ""), 401)
+	expectStatus(t, request(h, "POST", "/Videos/ActiveEncodings/Delete?PlaySessionId="+strings.Repeat("a", 129), "", "", token), 400)
+	expectStatus(t, request(h, "POST", "/Videos/ActiveEncodings/Delete?DeviceId=d&PlaySessionId=a", "", "", token), 204)
+	if busy("c") {
+		t.Fatal("the stopped session still holds its slot")
+	}
+	// Without PlaySessionId every session of the caller ends.
+	expectStatus(t, request(h, "DELETE", "/Videos/ActiveEncodings?DeviceId=d", "", "", token), 204)
+	fill()
+}
