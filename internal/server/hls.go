@@ -138,29 +138,37 @@ func (p playbackRequest) h264Limits() videoEncoding {
 	return limits
 }
 
-// h264FrameSizes maps H.264 levels (as Emby writes them, 42 for 4.2) to the
-// largest frame they allow, in 16x16 macroblocks (MaxFS, ITU-T H.264 Table
-// A-1).
-var h264FrameSizes = []struct{ level, macroblocks int }{
-	{10, 99}, {11, 396}, {21, 792}, {22, 1620}, {31, 3600}, {32, 5120},
-	{40, 8192}, {42, 8704}, {50, 22080}, {51, 36864}, {60, 139264},
+// h264Levels lists, for H.264 levels as Emby writes them (42 for 4.2), the
+// largest frame in 16x16 macroblocks (MaxFS) and the largest bitrate in
+// kbit/s for the Baseline and Main profiles (MaxBR), from ITU-T H.264 Table
+// A-1. High profile, which libx264 uses, allows 1.25 times MaxBR.
+var h264Levels = []struct{ level, macroblocks, kbps int }{
+	{10, 99, 64}, {11, 396, 192}, {12, 396, 384}, {13, 396, 768}, {20, 396, 2000},
+	{21, 792, 4000}, {22, 1620, 4000}, {30, 1620, 10000}, {31, 3600, 14000}, {32, 5120, 20000},
+	{40, 8192, 20000}, {41, 8192, 50000}, {42, 8704, 50000}, {50, 22080, 135000}, {51, 36864, 240000},
+	{52, 36864, 240000}, {60, 139264, 240000}, {61, 139264, 480000}, {62, 139264, 800000},
 }
 
-// fitLevel lowers MaxWidth and MaxHeight so that a source of width x height,
-// scaled to the current limits with its aspect ratio kept, also fits the
-// largest frame of the level. The level's macroblock rate, which bounds the
-// frame rate, is not checked. An unknown size or level changes nothing.
+// fitLevel caps the bitrate at the level's High profile maximum and lowers
+// MaxWidth and MaxHeight so that a source of width x height, scaled to the
+// current limits with its aspect ratio kept, also fits the largest frame of
+// the level. The level's macroblock rate, which bounds the frame rate, is
+// not checked. An unknown level changes nothing; an unknown size leaves the
+// size limits.
 func (e *videoEncoding) fitLevel(width, height int) {
-	if e.Level <= 0 || width <= 0 || height <= 0 {
-		return
-	}
-	most := 0
-	for _, l := range h264FrameSizes {
-		if l.level <= e.Level {
-			most = l.macroblocks
+	most, kbps := 0, 0
+	for _, l := range h264Levels {
+		if e.Level > 0 && l.level <= e.Level {
+			most, kbps = l.macroblocks, l.kbps
 		}
 	}
 	if most == 0 {
+		return
+	}
+	if limit := int64(kbps) * 1250; e.Bitrate == 0 || limit < e.Bitrate {
+		e.Bitrate = limit
+	}
+	if width <= 0 || height <= 0 {
 		return
 	}
 	scale := 1.0

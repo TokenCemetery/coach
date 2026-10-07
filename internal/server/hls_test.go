@@ -209,9 +209,13 @@ func TestFitLevel(t *testing.T) {
 	} {
 		got := tc.in
 		got.fitLevel(tc.width, tc.height)
+		// High profile allows 1.25 times the level's MaxBR.
+		if want := map[int]int64{0: 0, 30: 12_500_000, 40: 25_000_000, 41: 62_500_000, 42: 62_500_000, 51: 300_000_000}[tc.in.Level]; got.Bitrate != want {
+			t.Fatalf("%s: bitrate %d, want %d", tc.name, got.Bitrate, want)
+		}
 		if tc.most == 0 {
-			if got != tc.in {
-				t.Fatalf("%s: limits changed to %+v", tc.name, got)
+			if got.MaxWidth != tc.in.MaxWidth || got.MaxHeight != tc.in.MaxHeight {
+				t.Fatalf("%s: size limits changed to %+v", tc.name, got)
 			}
 			continue
 		}
@@ -219,5 +223,13 @@ func TestFitLevel(t *testing.T) {
 		if mb := macroblocks(got.MaxWidth, got.MaxHeight); mb > tc.most || mb < tc.most*9/10 || ratio < 1.76 || ratio > 1.79 {
 			t.Fatalf("%s: %dx%d is %d macroblocks, want at most %d at 16:9", tc.name, got.MaxWidth, got.MaxHeight, mb, tc.most)
 		}
+	}
+}
+
+func TestFitLevelKeepsLowerBitrate(t *testing.T) {
+	e := videoEncoding{Level: 42, Bitrate: 1_000_000}
+	e.fitLevel(1920, 1080)
+	if e.Bitrate != 1_000_000 || e.MaxWidth != 0 {
+		t.Fatalf("got %+v", e)
 	}
 }
