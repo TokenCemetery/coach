@@ -39,8 +39,14 @@ func (p playbackRequest) remuxCodecs(item media.Item, video, audio *media.Stream
 		if !strings.EqualFold(tp.Type, "Video") || !strings.EqualFold(tp.Protocol, "hls") || !strings.EqualFold(tp.Container, "ts") || !member(tp.VideoCodec, video.Codec) {
 			continue
 		}
+		// The segments hold only the video and the selected audio, so that
+		// track is the primary one there (IsSecondaryAudio).
 		segmented := item
 		segmented.Container = "ts"
+		segmented.Streams = []media.Stream{*video}
+		if audio != nil {
+			segmented.Streams = append(segmented.Streams, *audio)
+		}
 		if audio == nil {
 			return video.Codec, "", 0, codecProfilesMatch(p.DeviceProfile, segmented, video, nil)
 		}
