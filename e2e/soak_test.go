@@ -16,12 +16,16 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
 
 // TestSoak runs mixed client load against one instance for COACH_SOAK (a Go
 // duration such as "10m") and samples the process. It is skipped otherwise.
+// Workers 0 and 1 also remux to HLS and worker 2 transcodes, which fills the
+// FFmpeg session limits, and the media directory is rescanned (SIGHUP)
+// during the load.
 // Budgets are not agreed yet (#15), so it reports the numbers and fails only
 // on leftovers: child processes, file descriptors or files in the data
 // directory that outlive the load.
@@ -71,6 +75,22 @@ func TestSoak(t *testing.T) {
 			}
 		})
 	}
+	// Rescan during playback, as -rescan-interval or an admin's SIGHUP would.
+	var rescans atomic.Int64
+	wg.Go(func() {
+		tick := time.NewTicker(max(duration/8, 5*time.Second))
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				if err := inst.cmd.Process.Signal(syscall.SIGHUP); err == nil {
+					rescans.Add(1)
+				}
+			}
+		}
+	})
 	samples := []processSample{baseline}
 	ticker := time.NewTicker(max(duration/20, time.Second))
 	for done := false; !done; {
@@ -88,7 +108,7 @@ func TestSoak(t *testing.T) {
 	samples = append(samples, final)
 
 	peak := slices.MaxFunc(samples, func(a, b processSample) int { return a.rssKiB - b.rssKiB })
-	t.Logf("%d workers, %s: %d requests, %d failures", workers, duration, requests.Load(), failures.Load())
+	t.Logf("%d workers, %s: %d requests, %d failures, %d rescans", workers, duration, requests.Load(), failures.Load(), rescans.Load())
 	t.Logf("RSS KiB: start %d, peak %d, end %d; open files: start %d, end %d", baseline.rssKiB, peak.rssKiB, final.rssKiB, baseline.files, final.files)
 	for _, s := range samples {
 		t.Logf("  %s rss=%dKiB files=%d children=%d", s.at.Format(time.TimeOnly), s.rssKiB, s.files, s.children)
@@ -171,7 +191,28 @@ func soakRequests(inst *Instance, worker, iteration int) []Request {
 	if iteration%10 == 0 && inst.IDs.SubtitleIndex != "" {
 		list = append(list, Request{Method: "GET", Path: "/Videos/" + inst.IDs.MovieID + "/" + inst.IDs.MediaSourceID + "/Subtitles/" + inst.IDs.SubtitleIndex + "/Stream.vtt"})
 	}
+	if worker < 3 && iteration%4 == 0 {
+		list = append(list, hlsSession(inst, worker, iteration)...)
+	}
 	return list
+}
+
+// hlsSession plays the first segment of an HLS stream and ends the session
+// as Emby Web does on stop. Workers 0 and 1 remux, worker 2 transcodes, so
+// together they fill both FFmpeg limits without exceeding them.
+func hlsSession(inst *Instance, worker, iteration int) []Request {
+	query := url.Values{"MediaSourceId": {inst.IDs.MediaSourceID}, "VideoCodec": {"h264"}, "AudioCodec": {"aac"},
+		"PlaySessionId": {fmt.Sprintf("soak-hls-%d-%d", worker, iteration)}, "DeviceId": {"soak-" + strconv.Itoa(worker)}}
+	if worker == 2 {
+		query.Set("VideoBitrate", "500000")
+	}
+	base := "/Videos/" + inst.IDs.MovieID
+	return []Request{
+		{Method: "GET", Path: base + "/master.m3u8", Query: query},
+		{Method: "GET", Path: base + "/main.m3u8", Query: query},
+		{Method: "GET", Path: base + "/hls1/main/0.ts", Query: query},
+		{Method: "POST", Path: "/Videos/ActiveEncodings/Delete", Query: url.Values{"PlaySessionId": query["PlaySessionId"]}},
+	}
 }
 
 type processSample struct {
