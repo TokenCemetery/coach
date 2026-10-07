@@ -67,6 +67,8 @@ func TestLibraryFilters(t *testing.T) {
 		"/Tags":                                          "",
 		"/OfficialRatings":                               "",
 		"/ExtendedVideoTypes":                            "",
+		"/Artists?Filters=IsFavorite&ArtistType=all":     "",
+		"/Persons?Filters=IsFavorite":                    "",
 	} {
 		if got := names(path); got != want {
 			t.Fatalf("%s: %q, want %q", path, got, want)

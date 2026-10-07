@@ -183,8 +183,10 @@ func (s *Server) filterRoutes(mux *http.ServeMux) {
 		s.filterValueList(mediaFilters[key])(w, r, token, session)
 	}))
 	// Coach has no genres, studios, tags, ratings or years, and every video
-	// is of the plain type, so these lists are empty.
-	for _, path := range []string{"/genres", "/studios", "/tags", "/officialratings", "/years", "/extendedvideotypes"} {
+	// is of the plain type, so these lists are empty. Without music libraries
+	// or people metadata it has no artists or persons either; the home
+	// Favorites tab asks for both (#80).
+	for _, path := range []string{"/genres", "/studios", "/tags", "/officialratings", "/years", "/extendedvideotypes", "/artists", "/persons"} {
 		mux.HandleFunc("GET "+path, s.protect(s.filterValueList(nil)))
 	}
 }

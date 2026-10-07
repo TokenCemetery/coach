@@ -33,7 +33,6 @@ var knownFailures = map[string]knownFailure{
 	// ActivityLogService
 	"getSystemActivitylogEntries": administration,
 	// ArtistsService
-	"getArtists":             unranked,
 	"getArtistsAlbumartists": unranked,
 	"getArtistsByName":       unranked,
 	// BackupApi
@@ -334,7 +333,6 @@ var knownFailures = map[string]knownFailure{
 	"postPartiesLeave":    unranked,
 	"postPartiesMessages": unranked,
 	// PersonsService
-	"getPersons":            unranked,
 	"getPersonsByIdCredits": unranked,
 	"getPersonsByName":      unranked,
 	// PlaylistService
