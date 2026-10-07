@@ -21,6 +21,10 @@ import (
 const SegmentSeconds = 6
 
 const (
+	// seekStep spaces the seeks that list keyframes. A seek lands on the
+	// keyframe at or before its target, so seeking once per segment would
+	// skip keyframes and make segments longer than SegmentSeconds.
+	seekStep      = SegmentSeconds / 3
 	keyframeLimit = 5 * time.Minute
 	maxKeyframes  = 1 << 20
 )
@@ -63,55 +67,68 @@ func Playlist(bounds []float64, duration float64, segmentURL func(n int) string)
 	return b.String()
 }
 
-// keyframes lists the keyframe times of one video stream, relative to the
-// file's start time, and returns that start time. FFprobe reads every
-// packet, so this reads the whole file; the result is cached by the Manager.
+// keyframes lists keyframe times of one video stream, relative to the
+// file's start time, and returns that start time. It seeks every
+// seekStep seconds and keeps the keyframe each seek lands on, so it reads a
+// few packets per seek instead of the whole file. Any subset of the keyframes gives a
+// plan FFmpeg follows exactly. Containers whose seeks do not land on
+// keyframes (MPEG-TS) fall back to reading every packet. The result is
+// cached by the Manager.
 func keyframes(ctx context.Context, ffprobe string, file *os.File, stream int) ([]float64, float64, error) {
 	ctx, cancel := context.WithTimeout(ctx, keyframeLimit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, ffprobe, "-v", "error", //nolint:gosec // binary is ffprobe from PATH; the only variable argument is an integer
-		"-protocol_whitelist", "fd", "-fd", "3", "-select_streams", strconv.Itoa(stream),
-		"-show_entries", "packet=pts_time,flags:format=start_time", "-of", "csv", "fd:")
-	cmd.Env = []string{"LC_ALL=C"}
-	cmd.ExtraFiles = []*os.File{file}
-	cmd.WaitDelay = time.Second
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, 0, err
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, 0, err
-	}
-	var times []float64
-	start, parseErr := 0.0, error(nil)
-	lines := bufio.NewScanner(out)
-	for lines.Scan() {
-		fields := strings.Split(lines.Text(), ",")
-		switch {
-		case len(fields) >= 3 && fields[0] == "packet" && strings.HasPrefix(fields[2], "K"):
-			t, err := strconv.ParseFloat(fields[1], 64)
-			if err != nil {
-				continue // N/A: the packet has no timestamp
-			}
-			if len(times) >= maxKeyframes {
-				parseErr = errors.New("too many keyframes")
-				cancel()
-			}
-			times = append(times, t)
-		case len(fields) >= 2 && fields[0] == "format":
+	start, duration := 0.0, 0.0
+	err := probe(ctx, ffprobe, file, []string{"-show_entries", "format=start_time,duration"}, func(fields []string) error {
+		if len(fields) >= 3 && fields[0] == "format" {
 			start, _ = strconv.ParseFloat(fields[1], 64)
+			duration, _ = strconv.ParseFloat(fields[2], 64)
 		}
-	}
-	if lines.Err() != nil {
-		parseErr = lines.Err()
-		cancel()
-	}
-	_, _ = io.Copy(io.Discard, out)
-	if err := cmd.Wait(); err != nil || parseErr != nil || len(times) == 0 {
+		return nil
+	})
+	if err != nil {
 		return nil, 0, errors.New("cannot list keyframes")
 	}
-	// Packets are in decode order; keyframe times are ascending in practice,
-	// but a stray one out of order would break the segment plan.
+	selected := []string{"-select_streams", strconv.Itoa(stream), "-show_entries", "packet=pts_time,flags"}
+	var times []float64
+	if duration > 0 && duration/seekStep < maxKeyframes {
+		intervals := make([]string, 0, int(duration/seekStep)+1)
+		for t := 0.0; t < duration; t += seekStep {
+			intervals = append(intervals, strconv.FormatFloat(start+t, 'f', 3, 64)+"%+#1")
+		}
+		seeked := true
+		err = probe(ctx, ffprobe, file, append(selected, "-read_intervals", strings.Join(intervals, ",")), func(fields []string) error {
+			t, key, ok := packet(fields)
+			if ok && !key {
+				seeked = false
+			}
+			if ok && key {
+				times = append(times, t)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, 0, errors.New("cannot list keyframes")
+		}
+		if !seeked {
+			times = nil
+		}
+	}
+	if len(times) == 0 {
+		err = probe(ctx, ffprobe, file, selected, func(fields []string) error {
+			if t, key, ok := packet(fields); ok && key {
+				if len(times) >= maxKeyframes {
+					return errors.New("too many keyframes")
+				}
+				times = append(times, t)
+			}
+			return nil
+		})
+		if err != nil || len(times) == 0 {
+			return nil, 0, errors.New("cannot list keyframes")
+		}
+	}
+	// Seeks list keyframes in time order and packets come in decode order;
+	// a stray one out of order or repeated would break the segment plan.
 	result := times[:0]
 	for _, t := range times {
 		if t-start >= 0 && (len(result) == 0 || t-start > result[len(result)-1]) {
@@ -119,4 +136,54 @@ func keyframes(ctx context.Context, ffprobe string, file *os.File, stream int) (
 		}
 	}
 	return result, start, nil
+}
+
+// packet parses a CSV packet line with pts_time and flags.
+func packet(fields []string) (t float64, key, ok bool) {
+	if len(fields) < 3 || fields[0] != "packet" {
+		return 0, false, false
+	}
+	t, err := strconv.ParseFloat(fields[1], 64)
+	if err != nil {
+		return 0, false, false // N/A: the packet has no timestamp
+	}
+	return t, strings.HasPrefix(fields[2], "K"), true
+}
+
+// probe runs FFprobe on file from its start with CSV output and passes each
+// line's fields to line; an error from line stops FFprobe.
+func probe(ctx context.Context, ffprobe string, file *os.File, args []string, line func(fields []string) error) error {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	args = append([]string{"-v", "error", "-protocol_whitelist", "fd", "-fd", "3"}, args...)
+	cmd := exec.CommandContext(ctx, ffprobe, append(args, "-of", "csv", "fd:")...) //nolint:gosec // binary is ffprobe from PATH; arguments are numbers and fixed options
+	cmd.Env = []string{"LC_ALL=C"}
+	cmd.ExtraFiles = []*os.File{file}
+	cmd.WaitDelay = time.Second
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	var lineErr error
+	lines := bufio.NewScanner(out)
+	for lineErr == nil && lines.Scan() {
+		lineErr = line(strings.Split(lines.Text(), ","))
+	}
+	if lineErr == nil {
+		lineErr = lines.Err()
+	}
+	if lineErr != nil {
+		cancel()
+	}
+	_, _ = io.Copy(io.Discard, out)
+	if err := cmd.Wait(); err != nil {
+		return err
+	}
+	return lineErr
 }
