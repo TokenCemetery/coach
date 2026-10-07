@@ -28,6 +28,12 @@ make() {
 	make "WebM VP9 Opus.webm" $video $tone -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -g 50 -c:a libopus
 	make "AVI MPEG4 MP3.avi" $video $tone -c:v mpeg4 -q:v 5 -g 50 -c:a libmp3lame
 	make "MKV HEVC10 AC3.mkv" $video $tone -c:v libx265 -pix_fmt yuv420p10le -x265-params log-level=error:keyint=50:min-keyint=50:scenecut=0 -c:a ac3
+	# Two 30 s episodes that need remux, for the next-episode transition.
+	mkdir -p "$dir/Matrix Show/Season 01"
+	for e in 1 2; do
+		make "Matrix Show/Season 01/Matrix Show.S01E0$e.mkv" -f lavfi -i testsrc2=s=640x360:d=30:r=25 -f lavfi -i sine=d=30:f=440 \
+			-c:v libx264 $key -pix_fmt yuv420p -c:a ac3
+	done
 }
 # A sidecar subtitle with one 1.5 s cue every 2 s.
 i=0

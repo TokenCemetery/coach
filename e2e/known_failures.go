@@ -12,7 +12,7 @@ type knownFailure struct {
 func (k knownFailure) Link() string { return strconv.Itoa(k.Issue) }
 
 var (
-	hlsDelivery          = knownFailure{21, "only video remux to HLS is implemented: no audio-only HLS, live or subtitle playlists"}
+	hlsDelivery          = knownFailure{21, "video remux and transcoding to HLS are implemented; audio-only HLS, live and subtitle playlists are not"}
 	transcoding          = knownFailure{22, "only HLS video transcoding is implemented: no encoder settings, live streams, bitrate test or universal audio"}
 	subtitles            = knownFailure{24, "audio and subtitle track selection and subtitle delivery are not implemented"}
 	nextUpAndCollections = knownFailure{40, "missing episodes and collections are not implemented"}
