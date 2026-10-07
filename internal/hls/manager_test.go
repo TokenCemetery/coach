@@ -100,7 +100,7 @@ func TestRemuxSegmentsMatchThePlan(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			bounds, _ := m.bounds(ctx, source)
+			bounds, _, _ := m.bounds(ctx, source)
 			if len(bounds) < 5 || strings.Count(playlist, "#EXTINF") != len(bounds) {
 				t.Fatalf("bounds %v, playlist:\n%s", bounds, playlist)
 			}
@@ -170,7 +170,7 @@ func TestRemuxJobPausesAhead(t *testing.T) {
 	source := Source{ItemID: "long", Version: "1", Duration: 180, VideoStream: 0, AudioStream: 1,
 		Open: func() (*os.File, error) { return os.Open(path) }}
 	ctx := context.Background()
-	bounds, err := m.bounds(ctx, source)
+	bounds, _, err := m.bounds(ctx, source)
 	if err != nil || len(bounds) <= maxLead+restartGap+2 {
 		t.Fatalf("bounds %d: %v", len(bounds), err)
 	}

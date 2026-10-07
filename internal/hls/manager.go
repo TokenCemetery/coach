@@ -90,6 +90,7 @@ type Manager struct {
 type keyframeEntry struct {
 	done   chan struct{}
 	bounds []float64
+	start  float64 // the file's start time, which bounds are relative to
 	err    error
 }
 
@@ -231,12 +232,13 @@ func (m *Manager) StopOwner(owner string) {
 // playlist request that follows PlaybackInfo does not wait for the whole file
 // to be read.
 func (m *Manager) Prepare(source Source) {
-	go func() { _, _ = m.bounds(context.Background(), source) }()
+	go func() { _, _, _ = m.bounds(context.Background(), source) }()
 }
 
-// bounds returns the cached segment plan, computing it once per file version.
-// The computation is not tied to ctx, so an impatient client does not waste it.
-func (m *Manager) bounds(ctx context.Context, source Source) ([]float64, error) {
+// bounds returns the cached segment plan and the file's start time, computing
+// them once per file version. The computation is not tied to ctx, so an
+// impatient client does not waste it.
+func (m *Manager) bounds(ctx context.Context, source Source) ([]float64, float64, error) {
 	key := source.ItemID + "/" + source.Version + "/" + strconv.Itoa(source.VideoStream)
 	m.mu.Lock()
 	entry, ok := m.cache[key]
@@ -263,20 +265,20 @@ func (m *Manager) bounds(ctx context.Context, source Source) ([]float64, error) 
 				return
 			}
 			defer func() { _ = file.Close() }()
-			times, err := keyframes(context.Background(), m.ffprobe, file, source.VideoStream)
+			times, start, err := keyframes(context.Background(), m.ffprobe, file, source.VideoStream)
 			if err != nil {
 				slog.Warn("Keyframe listing failed", "item", source.ItemID)
 				entry.err = err
 				return
 			}
-			entry.bounds = Boundaries(times)
+			entry.bounds, entry.start = Boundaries(times), start
 		}()
 	}
 	m.mu.Unlock()
 	select {
 	case <-entry.done:
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, 0, ctx.Err()
 	}
 	if entry.err != nil {
 		// Let a later request try again, for example after a remount.
@@ -285,9 +287,9 @@ func (m *Manager) bounds(ctx context.Context, source Source) ([]float64, error) 
 			delete(m.cache, key)
 		}
 		m.mu.Unlock()
-		return nil, entry.err
+		return nil, 0, entry.err
 	}
-	return entry.bounds, nil
+	return entry.bounds, entry.start, nil
 }
 
 // open returns the session id, creating it for source on first use.
@@ -323,7 +325,7 @@ func (m *Manager) Playlist(ctx context.Context, id, owner string, source Source,
 		return "", err
 	}
 	s.touch()
-	bounds, err := m.bounds(ctx, source)
+	bounds, _, err := m.bounds(ctx, source)
 	if err != nil {
 		return "", err
 	}
@@ -338,7 +340,7 @@ func (m *Manager) Segment(ctx context.Context, id, owner string, source Source, 
 		return nil, err
 	}
 	request := s.requests.Add(1)
-	bounds, err := m.bounds(ctx, source)
+	bounds, start, err := m.bounds(ctx, source)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +365,7 @@ func (m *Manager) Segment(ctx context.Context, id, owner string, source Source, 
 				return nil, ErrSuperseded
 			}
 			s.stopJob()
-			if err := s.startJob(m.ffmpeg, bounds, n); err != nil {
+			if err := s.startJob(m.ffmpeg, bounds, start, n); err != nil {
 				s.mu.Unlock()
 				slog.Warn("HLS job failed to start", "item", source.ItemID, "error", err)
 				return nil, ErrSegment
@@ -467,7 +469,7 @@ func (j *job) finished() bool {
 }
 
 // startJob writes segments from n on. Caller holds s.mu.
-func (s *session) startJob(ffmpeg string, bounds []float64, n int) error {
+func (s *session) startJob(ffmpeg string, bounds []float64, start float64, n int) error {
 	file, err := s.source.Open()
 	if err != nil {
 		return err
@@ -477,7 +479,10 @@ func (s *session) startJob(ffmpeg string, bounds []float64, n int) error {
 	if n > 0 {
 		// Seek just before the segment's keyframe; -copypriorss 0 drops what
 		// the demuxer returns before it, so the job starts on that keyframe.
-		args = append(args, "-ss", strconv.FormatFloat(bounds[n]-0.001, 'f', 6, 64))
+		// FFmpeg compares that cutoff with absolute timestamps, so -ss is
+		// absolute too (-seek_timestamp 1): with a relative one, a file that
+		// starts below zero would lose the keyframe itself (#64).
+		args = append(args, "-seek_timestamp", "1", "-ss", strconv.FormatFloat(start+bounds[n]-0.001, 'f', 6, 64))
 	}
 	args = append(args, "-fd", "3", "-i", "fd:", "-map", "0:"+strconv.Itoa(s.source.VideoStream))
 	if s.source.AudioStream >= 0 {

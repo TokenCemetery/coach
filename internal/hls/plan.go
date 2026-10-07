@@ -64,9 +64,9 @@ func Playlist(bounds []float64, duration float64, segmentURL func(n int) string)
 }
 
 // keyframes lists the keyframe times of one video stream, relative to the
-// file's start time. FFprobe reads every packet, so this reads the whole
-// file; the result is cached by the Manager.
-func keyframes(ctx context.Context, ffprobe string, file *os.File, stream int) ([]float64, error) {
+// file's start time, and returns that start time. FFprobe reads every
+// packet, so this reads the whole file; the result is cached by the Manager.
+func keyframes(ctx context.Context, ffprobe string, file *os.File, stream int) ([]float64, float64, error) {
 	ctx, cancel := context.WithTimeout(ctx, keyframeLimit)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, ffprobe, "-v", "error", //nolint:gosec // binary is ffprobe from PATH; the only variable argument is an integer
@@ -77,10 +77,10 @@ func keyframes(ctx context.Context, ffprobe string, file *os.File, stream int) (
 	cmd.WaitDelay = time.Second
 	out, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var times []float64
 	start, parseErr := 0.0, error(nil)
@@ -108,7 +108,7 @@ func keyframes(ctx context.Context, ffprobe string, file *os.File, stream int) (
 	}
 	_, _ = io.Copy(io.Discard, out)
 	if err := cmd.Wait(); err != nil || parseErr != nil || len(times) == 0 {
-		return nil, errors.New("cannot list keyframes")
+		return nil, 0, errors.New("cannot list keyframes")
 	}
 	// Packets are in decode order; keyframe times are ascending in practice,
 	// but a stray one out of order would break the segment plan.
@@ -118,5 +118,5 @@ func keyframes(ctx context.Context, ffprobe string, file *os.File, stream int) (
 			result = append(result, t-start)
 		}
 	}
-	return result, nil
+	return result, start, nil
 }
