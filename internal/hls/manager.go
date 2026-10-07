@@ -66,9 +66,11 @@ type Source struct {
 	Duration    float64
 	VideoStream int
 	// VideoEncode encodes the video to 8-bit H.264 at most VideoBitrate bits
-	// per second instead of copying it.
-	VideoEncode  bool
-	VideoBitrate int64
+	// per second instead of copying it, scaled down to fit MaxWidth and
+	// MaxHeight when they are set.
+	VideoEncode         bool
+	VideoBitrate        int64
+	MaxWidth, MaxHeight int
 	// AudioStream is -1 for none. Audio is copied, or encoded to AAC with
 	// AudioChannels channels when AudioEncode is set.
 	AudioStream   int
@@ -79,7 +81,7 @@ type Source struct {
 // Key identifies what the session produces; a session ID cannot be reused
 // for another key.
 func (s Source) Key() string {
-	return fmt.Sprintf("%s/%d/%t/%d/%d/%t/%d", s.ItemID, s.VideoStream, s.VideoEncode, s.VideoBitrate, s.AudioStream, s.AudioEncode, s.AudioChannels)
+	return fmt.Sprintf("%s/%d/%t/%d/%dx%d/%d/%t/%d", s.ItemID, s.VideoStream, s.VideoEncode, s.VideoBitrate, s.MaxWidth, s.MaxHeight, s.AudioStream, s.AudioEncode, s.AudioChannels)
 }
 
 // Manager owns HLS sessions and their FFmpeg jobs. Segments live in
@@ -521,7 +523,7 @@ func (s *session) startJob(ffmpeg string, bounds []float64, start float64, n int
 		args = append(args, "-map", "0:"+strconv.Itoa(s.source.AudioStream))
 	}
 	if s.source.VideoEncode {
-		args = append(args, encodeVideo(bounds[n:], start, s.source.VideoBitrate)...)
+		args = append(args, encodeVideo(bounds[n:], start, s.source)...)
 	} else {
 		args = append(args, "-c:v", "copy")
 	}
@@ -592,18 +594,27 @@ func (s *session) startJob(ffmpeg string, bounds []float64, start float64, n int
 // time. Keyframes are forced on the source's keyframe plan, so the segments
 // match those of a remux. The encoder keeps the source's time base (demux):
 // with the frame rate's, timestamps are rounded and a forced keyframe can
-// land one frame late.
-func encodeVideo(bounds []float64, start float64, maxBitrate int64) []string {
+// land one frame late. The picture keeps its aspect ratio, shrinks to fit
+// the source's MaxWidth and MaxHeight, and has even dimensions, as 4:2:0
+// requires.
+func encodeVideo(bounds []float64, start float64, source Source) []string {
 	keyframes := make([]string, len(bounds))
 	for i, b := range bounds {
 		keyframes[i] = strconv.FormatFloat(start+b-0.001, 'f', 6, 64)
 	}
+	bound := func(limit int, size string) string {
+		if limit <= 0 {
+			return size
+		}
+		return "'min(" + size + "," + strconv.Itoa(limit) + ")'"
+	}
+	scale := "scale=w=" + bound(source.MaxWidth, "iw") + ":h=" + bound(source.MaxHeight, "ih") + ":force_original_aspect_ratio=decrease:force_divisible_by=2"
 	args := []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
-		"-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-enc_time_base:v", "demux", "-fps_mode", "passthrough",
+		"-vf", scale, "-enc_time_base:v", "demux", "-fps_mode", "passthrough",
 		"-force_key_frames", strings.Join(keyframes, ",")}
-	if maxBitrate > 0 {
-		rate := strconv.FormatInt(maxBitrate, 10)
-		args = append(args, "-maxrate", rate, "-bufsize", strconv.FormatInt(2*maxBitrate, 10))
+	if source.VideoBitrate > 0 {
+		rate := strconv.FormatInt(source.VideoBitrate, 10)
+		args = append(args, "-maxrate", rate, "-bufsize", strconv.FormatInt(2*source.VideoBitrate, 10))
 	}
 	return args
 }

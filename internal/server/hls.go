@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -60,18 +61,25 @@ func (p playbackRequest) remuxCodecs(item media.Item, video, audio *media.Stream
 	return "", "", 0, false
 }
 
+// videoEncoding limits a video encoded to H.264. Bitrate is positive for an
+// encoded video and zero for a copied one; a zero size is unlimited.
+type videoEncoding struct {
+	Bitrate             int64
+	MaxWidth, MaxHeight int
+}
+
 // transcodeCodecs returns the audio codec of an HLS stream whose video is
-// encoded to H.264, when the profile accepts H.264 in HLS, and the video
-// bitrate cap. The audio is copied or encoded to AAC as in remuxCodecs. The
-// encoded video's own codec profile is not checked: it is 8-bit H.264 at the
-// source's size.
-func (p playbackRequest) transcodeCodecs(item media.Item, video, audio *media.Stream) (audioCodec string, channels int, videoBitrate int64, ok bool) {
+// encoded to H.264, when the profile accepts H.264 in HLS, and the limits of
+// the encoded video. The audio is copied or encoded to AAC as in remuxCodecs.
+func (p playbackRequest) transcodeCodecs(item media.Item, video, audio *media.Stream) (audioCodec string, channels int, encoding videoEncoding, ok bool) {
 	if video == nil || p.DeviceProfile == nil {
-		return "", 0, 0, false
+		return "", 0, encoding, false
 	}
-	videoBitrate = p.transcodeBitrate(item)
-	if videoBitrate < 0 {
-		return "", 0, 0, false
+	encoding = p.h264Limits()
+	if bitrate := p.transcodeBitrate(item); bitrate < 0 {
+		return "", 0, encoding, false
+	} else if encoding.Bitrate == 0 || bitrate < encoding.Bitrate {
+		encoding.Bitrate = bitrate
 	}
 	for _, tp := range p.DeviceProfile.TranscodingProfiles {
 		if !strings.EqualFold(tp.Type, "Video") || !strings.EqualFold(tp.Protocol, "hls") || !strings.EqualFold(tp.Container, "ts") || !member(tp.VideoCodec, "h264") {
@@ -79,14 +87,50 @@ func (p playbackRequest) transcodeCodecs(item media.Item, video, audio *media.St
 		}
 		switch {
 		case audio == nil:
-			return "", 0, videoBitrate, true
+			return "", 0, encoding, true
 		case member(tp.AudioCodec, audio.Codec) && p.audioChannelsAllowed(audio):
-			return audio.Codec, 0, videoBitrate, true
+			return audio.Codec, 0, encoding, true
 		case member(tp.AudioCodec, "aac"):
-			return "aac", encodedChannels(audio.Channels, p.MaxAudioChannels), videoBitrate, true
+			return "aac", encodedChannels(audio.Channels, p.MaxAudioChannels), encoding, true
 		}
 	}
-	return "", 0, 0, false
+	return "", 0, encoding, false
+}
+
+// h264Limits collects the LessThanEqual limits on Width, Height and
+// VideoBitrate from the profile's video codec conditions that apply to H.264
+// in MPEG-TS, such as Emby Web's Width 1920 for a browser that cannot decode
+// 4K smoothly. Conditions on the source (ApplyConditions) and other
+// properties are not evaluated for the encoded video.
+func (p playbackRequest) h264Limits() videoEncoding {
+	var limits videoEncoding
+	lower := func(current, limit int64) int64 {
+		if current == 0 || limit < current {
+			return limit
+		}
+		return current
+	}
+	for _, cp := range p.DeviceProfile.CodecProfiles {
+		if !strings.EqualFold(cp.Type, "Video") || len(cp.ApplyConditions) > 0 ||
+			(cp.Codec != "" && !member(cp.Codec, "h264")) || (cp.Container != "" && !member(cp.Container, "ts")) {
+			continue
+		}
+		for _, c := range cp.Conditions {
+			value, ok := conditionNumber(string(c.Value))
+			if !strings.EqualFold(c.Condition, "LessThanEqual") || !ok || value < 1 || value > math.MaxInt32 {
+				continue
+			}
+			switch strings.ToLower(c.Property) {
+			case "width":
+				limits.MaxWidth = int(lower(int64(limits.MaxWidth), int64(value)))
+			case "height":
+				limits.MaxHeight = int(lower(int64(limits.MaxHeight), int64(value)))
+			case "videobitrate":
+				limits.Bitrate = lower(limits.Bitrate, int64(value))
+			}
+		}
+	}
+	return limits
 }
 
 // Without a client limit, an encoded video of unknown bitrate is capped at
@@ -135,16 +179,22 @@ func encodedChannels(source int, limit *int64) int {
 	return min(source, most)
 }
 
-// transcodingURL names the HLS stream; a videoBitrate above zero means the
-// video is encoded to videoCodec at most at that rate rather than copied.
-func transcodingURL(item media.Item, deviceID, playSession, token, videoCodec, audioCodec string, audio *media.Stream, channels int, videoBitrate int64) string {
+// transcodingURL names the HLS stream; VideoBitrate in it means the video is
+// encoded to videoCodec within the encoding limits rather than copied.
+func transcodingURL(item media.Item, deviceID, playSession, token, videoCodec, audioCodec string, audio *media.Stream, channels int, encoding videoEncoding) string {
 	query := url.Values{}
 	query.Set("MediaSourceId", "mediasource_"+item.ID)
 	query.Set("PlaySessionId", playSession)
 	query.Set("api_key", token)
 	query.Set("VideoCodec", videoCodec)
-	if videoBitrate > 0 {
-		query.Set("VideoBitrate", strconv.FormatInt(videoBitrate, 10))
+	if encoding.Bitrate > 0 {
+		query.Set("VideoBitrate", strconv.FormatInt(encoding.Bitrate, 10))
+		if encoding.MaxWidth > 0 {
+			query.Set("MaxWidth", strconv.Itoa(encoding.MaxWidth))
+		}
+		if encoding.MaxHeight > 0 {
+			query.Set("MaxHeight", strconv.Itoa(encoding.MaxHeight))
+		}
 	}
 	if audio != nil {
 		query.Set("AudioCodec", audioCodec)
@@ -215,6 +265,16 @@ func (s *Server) hlsSource(w http.ResponseWriter, r *http.Request, session state
 			return "", source, false
 		}
 		source.VideoEncode, source.VideoBitrate = true, n
+	}
+	for name, size := range map[string]*int{"MaxWidth": &source.MaxWidth, "MaxHeight": &source.MaxHeight} {
+		if text := query.Get(name); text != "" {
+			n, err := strconv.ParseInt(text, 10, 32)
+			if err != nil || n < 2 {
+				fail(w, 400, "InvalidRequest")
+				return "", source, false
+			}
+			*size = int(n)
+		}
 	}
 	if codecs := query.Get("VideoCodec"); codecs != "" && !member(codecs, video.Codec) {
 		if !member(codecs, "h264") {

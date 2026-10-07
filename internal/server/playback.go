@@ -107,15 +107,15 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 	remuxBusy := false
 	if !direct && s.hls != nil {
 		videoCodec, audioCodec, channels, ok := body.remuxCodecs(item, video, audio)
-		var videoBitrate int64
+		var encoding videoEncoding
 		if !ok {
-			audioCodec, channels, videoBitrate, ok = body.transcodeCodecs(item, video, audio)
+			audioCodec, channels, encoding, ok = body.transcodeCodecs(item, video, audio)
 			videoCodec = "h264"
 		}
 		switch {
 		case !ok:
-		case s.hls.Available(playSession, videoBitrate > 0):
-			transcoding = transcodingURL(item, session.DeviceID, playSession, token, videoCodec, audioCodec, audio, channels, videoBitrate)
+		case s.hls.Available(playSession, encoding.Bitrate > 0):
+			transcoding = transcodingURL(item, session.DeviceID, playSession, token, videoCodec, audioCodec, audio, channels, encoding)
 			s.hls.Prepare(remuxSource(catalog, item, video))
 		default:
 			remuxBusy = true

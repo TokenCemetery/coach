@@ -184,7 +184,7 @@ func TestTranscodeSegmentsMatchThePlan(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer m.Close()
-			source := Source{ItemID: "movie", Version: "1", Duration: 40, VideoStream: 0, VideoEncode: true, VideoBitrate: 1_000_000,
+			source := Source{ItemID: "movie", Version: "1", Duration: 40, VideoStream: 0, VideoEncode: true, VideoBitrate: 1_000_000, MaxWidth: 100,
 				AudioStream: 1, AudioEncode: true, AudioChannels: 2, Open: func() (*os.File, error) { return os.Open(path) }}
 			ctx := context.Background()
 			bounds, _, err := m.bounds(ctx, source)
@@ -201,7 +201,7 @@ func TestTranscodeSegmentsMatchThePlan(t *testing.T) {
 					out, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0", //nolint:gosec // test segment path
 						"-show_entries", "stream=codec_name,pix_fmt,width", "-of", "csv=p=0", file.Name()).Output()
 					// MPEG-TS lists the stream again under its program.
-					if got, _, _ := strings.Cut(string(out), "\n"); err != nil || got != "h264,160,yuv420p" {
+					if got, _, _ := strings.Cut(string(out), "\n"); err != nil || got != "h264,100,yuv420p" {
 						t.Fatalf("segment video %q: %v", got, err)
 					}
 				}

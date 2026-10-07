@@ -76,9 +76,16 @@ func TestPlaybackInfoRemux(t *testing.T) {
 		"level":   {strings.Replace(hlsProfile, `"Value":"51"`, `"Value":"40"`, 1), strconv.FormatInt(bitrate(movie), 10)},
 		"bitrate": {strings.Replace(hlsProfile, `{"DirectPlayProfiles"`, `{"MaxStreamingBitrate":1000000,"DirectPlayProfiles"`, 1), "808000"},
 	} {
-		if q := transcoding(info("", test.profile)); q.Get("VideoCodec") != "h264" || q.Get("VideoBitrate") != test.bitrate || q.Get("AudioCodec") != "aac" {
+		if q := transcoding(info("", test.profile)); q.Get("VideoCodec") != "h264" || q.Get("VideoBitrate") != test.bitrate || q.Get("AudioCodec") != "aac" || q.Has("MaxWidth") {
 			t.Fatalf("%s: transcoding query %v", name, q)
 		}
+	}
+	// Emby Web limits H.264 to 1920 wide when the browser cannot decode 4K
+	// smoothly; the limits of the H.264 codec profile bound the encoded video.
+	width := strings.Replace(hlsProfile, `"Conditions":[`, `"Conditions":[{"Condition":"LessThanEqual","Property":"Width","Value":"1280","IsRequired":false},`+
+		`{"Condition":"LessThanEqual","Property":"Height","Value":"1000"},{"Condition":"LessThanEqual","Property":"VideoBitrate","Value":"3000000"},`, 1)
+	if q := transcoding(info("", width)); q.Get("MaxWidth") != "1280" || q.Get("MaxHeight") != "1000" || q.Get("VideoBitrate") != "3000000" {
+		t.Fatalf("width-limited transcoding query %v", q)
 	}
 	// Coach encodes only to H.264 and only into HLS.
 	for name, profile := range map[string]string{
@@ -94,6 +101,7 @@ func TestPlaybackInfoRemux(t *testing.T) {
 	expectStatus(t, request(h, "GET", "/Videos/missing/master.m3u8?PlaySessionId=a", "", "", token), 404)
 	expectStatus(t, request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=a&VideoCodec=hevc", "", "", token), 400)
 	expectStatus(t, request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=a&VideoBitrate=0", "", "", token), 400)
+	expectStatus(t, request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=a&VideoBitrate=1000000&MaxWidth=1", "", "", token), 400)
 	w := request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=t&VideoCodec=h264&VideoBitrate=1000000", "", "", token)
 	expectStatus(t, w, 200)
 	if body := w.Body.String(); !strings.HasPrefix(body, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1192000\n") {
