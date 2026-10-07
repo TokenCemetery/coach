@@ -50,7 +50,6 @@ func member(list, value string) bool {
 }
 
 func (s *Server) catalogRoutes(mux *http.ServeMux) {
-	catalog := s.catalog()
 	mux.HandleFunc("GET /users/{user}/views", s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		items := []any{}
 		serverID := s.store.Snapshot().ServerID
@@ -67,7 +66,8 @@ func (s *Server) catalogRoutes(mux *http.ServeMux) {
 	for _, path := range []string{"/items/{item}", "/users/{user}/items/{item}"} {
 		mux.HandleFunc("GET "+path, s.protect(func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 			id := r.PathValue("item")
-			if catalog != nil {
+			// A rescan replaces the catalog, so each request reads it (#75).
+			if catalog := s.catalog(); catalog != nil {
 				snapshot := s.store.Snapshot()
 				if id == catalog.ID || (len(catalog.Folders) > 0 && id == catalog.SeriesLibraryID()) {
 					respond(w, 200, s.collectionDTO(id, snapshot.ServerID, true))
