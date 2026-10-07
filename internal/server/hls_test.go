@@ -177,7 +177,9 @@ func TestPlaybackInfoRemuxesSecondaryAudio(t *testing.T) {
 		}
 		return response.MediaSources[0]
 	}
-	if source := info("AudioStreamIndex=1"); source["SupportsDirectStream"] != true || source["TranscodingUrl"] != nil {
+	// A direct stream that HLS could also serve reports SupportsTranscoding,
+	// which enables Emby Web's quality menu (#72), but carries no URL.
+	if source := info("AudioStreamIndex=1"); source["SupportsDirectStream"] != true || source["SupportsTranscoding"] != true || source["TranscodingUrl"] != nil {
 		t.Fatalf("first track: %v", source)
 	}
 	source := info("AudioStreamIndex=2")
@@ -231,5 +233,36 @@ func TestFitLevelKeepsLowerBitrate(t *testing.T) {
 	e.fitLevel(1920, 1080)
 	if e.Bitrate != 1_000_000 || e.MaxWidth != 0 {
 		t.Fatalf("got %+v", e)
+	}
+}
+
+// Emby Web offers the quality menu only when the policy allows video
+// transcoding, so the policy follows whether HLS is enabled (#72).
+func TestPolicyFollowsHLS(t *testing.T) {
+	store, _, dir := newTestServer(t)
+	server := New(store, "test", nil, &media.Catalog{ID: "movies", Items: []media.Item{playbackMovie()}})
+	h := server.Handler()
+	token := login(t, h)
+	policy := func() map[string]any {
+		t.Helper()
+		w := request(h, "GET", "/Users/me", "", "", token)
+		expectStatus(t, w, 200)
+		var user struct{ Policy map[string]any }
+		if err := json.Unmarshal(w.Body.Bytes(), &user); err != nil {
+			t.Fatal(err)
+		}
+		return user.Policy
+	}
+	if p := policy(); p["EnableVideoPlaybackTranscoding"] != false || p["EnablePlaybackRemuxing"] != false {
+		t.Fatalf("without HLS: %v", p)
+	}
+	m, err := hls.NewManager("ffmpeg", "ffprobe", filepath.Join(dir, "transcode"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	server.SetHLS(m)
+	if p := policy(); p["EnableVideoPlaybackTranscoding"] != true || p["EnablePlaybackRemuxing"] != true || p["EnableAudioPlaybackTranscoding"] != false {
+		t.Fatalf("with HLS: %v", p)
 	}
 }

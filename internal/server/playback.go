@@ -102,18 +102,22 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 	}
 	direct := body.supportsDirectStream(item, video, audio)
 	// Remux to HLS when the client cannot take the file as it is, and encode
-	// the video to H.264 when it cannot take the video either.
+	// the video to H.264 when it cannot take the video either. A direct stream
+	// still reports SupportsTranscoding when HLS could serve it: Emby Web offers
+	// its quality menu only then, and a lower quality comes back here as a
+	// PlaybackInfo with MaxStreamingBitrate.
 	var transcoding string
-	remuxBusy := false
-	if !direct && s.hls != nil {
+	remuxBusy, canTranscode := false, false
+	if s.hls != nil {
 		videoCodec, audioCodec, channels, ok := body.remuxCodecs(item, video, audio)
 		var encoding videoEncoding
 		if !ok {
 			audioCodec, channels, encoding, ok = body.transcodeCodecs(item, video, audio)
 			videoCodec = "h264"
 		}
+		canTranscode = ok
 		switch {
-		case !ok:
+		case !ok || direct:
 		case s.hls.Available(playSession, encoding.Bitrate > 0):
 			transcoding = transcodingURL(item, session.DeviceID, playSession, token, videoCodec, audioCodec, audio, channels, encoding)
 			s.hls.Prepare(remuxSource(catalog, item, video))
@@ -123,7 +127,7 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 	}
 	source["SupportsDirectPlay"] = false
 	source["SupportsDirectStream"] = direct
-	source["SupportsTranscoding"] = transcoding != ""
+	source["SupportsTranscoding"] = transcoding != "" || (direct && canTranscode)
 	source["ItemId"] = item.ID
 	source["Formats"] = []string{}
 	source["RequiredHttpHeaders"] = object{}

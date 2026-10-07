@@ -142,15 +142,17 @@ func (s *Server) userDTO(d state.Data, token string) object {
 		config[k] = v
 	}
 	u["Configuration"] = config
-	u["Policy"] = policy()
+	u["Policy"] = policy(s.hls != nil)
 	return u
 }
 
 // policy mirrors the reference policy shape with values that match what Coach
-// can actually do: direct playback and downloading of the original file, no
-// transcoding, remuxing, Live TV, sync or remote control. Emby Web refuses to
-// start playback when EnableMediaPlayback is false, so this is load-bearing.
-func policy() object {
+// can actually do: direct playback and downloading of the original file, video
+// remux and transcoding to HLS when FFmpeg is available (hls), and no audio
+// transcoding, Live TV, sync or remote control. Emby Web refuses to start
+// playback when EnableMediaPlayback is false, and offers the quality menu only
+// with EnableVideoPlaybackTranscoding, so this is load-bearing.
+func policy(hls bool) object {
 	return object{
 		"IsAdministrator": false, "IsHidden": false, "IsHiddenRemotely": true,
 		"IsHiddenFromUnusedDevices": false, "IsDisabled": false, "LockedOutDate": 0,
@@ -159,10 +161,9 @@ func policy() object {
 		"BlockUnratedItems": []string{}, "EnableRemoteControlOfOtherUsers": false,
 		"EnableSharedDeviceControl": false, "EnableRemoteAccess": true,
 		"EnableLiveTvManagement": false, "EnableLiveTvAccess": false,
-		"EnableMediaPlayback": true,
-		// Coach serves the stored file unchanged; it never spawns an encoder.
-		"EnableAudioPlaybackTranscoding": false, "EnableVideoPlaybackTranscoding": false,
-		"EnableTranscodingQuality": false, "AutoRemoteQuality": 0, "EnablePlaybackRemuxing": false,
+		"EnableMediaPlayback":            true,
+		"EnableAudioPlaybackTranscoding": false, "EnableVideoPlaybackTranscoding": hls,
+		"EnableTranscodingQuality": false, "AutoRemoteQuality": 0, "EnablePlaybackRemuxing": hls,
 		"EnableContentDeletion": false, "RestrictedFeatures": []string{},
 		"EnableContentDeletionFromFolders": []string{}, "EnableContentDownloading": true,
 		"EnableSubtitleDownloading": false, "EnableSubtitleManagement": false,
