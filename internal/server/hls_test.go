@@ -210,7 +210,7 @@ func TestFitLevel(t *testing.T) {
 		{"no level", videoEncoding{}, 3840, 2160, 0},
 	} {
 		got := tc.in
-		got.fitLevel(tc.width, tc.height)
+		got.fitLevel(tc.width, tc.height, 0)
 		// High profile allows 1.25 times the level's MaxBR.
 		if want := map[int]int64{0: 0, 30: 12_500_000, 40: 25_000_000, 41: 62_500_000, 42: 62_500_000, 51: 300_000_000}[tc.in.Level]; got.Bitrate != want {
 			t.Fatalf("%s: bitrate %d, want %d", tc.name, got.Bitrate, want)
@@ -230,7 +230,7 @@ func TestFitLevel(t *testing.T) {
 
 func TestFitLevelKeepsLowerBitrate(t *testing.T) {
 	e := videoEncoding{Level: 42, Bitrate: 1_000_000}
-	e.fitLevel(1920, 1080)
+	e.fitLevel(1920, 1080, 0)
 	if e.Bitrate != 1_000_000 || e.MaxWidth != 0 {
 		t.Fatalf("got %+v", e)
 	}
@@ -305,4 +305,41 @@ func TestStreamSwitchReleasesCurrentSession(t *testing.T) {
 		t.Fatalf("switch: %v", r)
 	}
 	expectStatus(t, request(h, "POST", "/Items/movie/PlaybackInfo?CurrentPlaySessionId="+strings.Repeat("a", 129), "application/json", "{}", token), 400)
+}
+
+// The level's macroblock rate bounds the frame size at the source's frame
+// rate; the frame rate itself is kept.
+func TestFitLevelFrameRate(t *testing.T) {
+	macroblocks := func(w, h int) int { return ((w + 15) / 16) * ((h + 15) / 16) }
+	for _, tc := range []struct {
+		name          string
+		level         int
+		width, height int
+		fps           float64
+		most          int // 0: size limits unchanged
+	}{
+		{"1080p60 at 4.1", 41, 1920, 1080, 60, 245760 / 60},
+		{"1080p60 at 4.2", 42, 1920, 1080, 60, 0},
+		{"1080p30 at 4.0", 40, 1920, 1080, 30, 0},
+		{"720p60 at 3.1", 31, 1280, 720, 60, 108000 / 60},
+		{"2160p24 at 4.2", 42, 3840, 2160, 24, 8704},
+	} {
+		e := videoEncoding{Level: tc.level}
+		e.fitLevel(tc.width, tc.height, tc.fps)
+		if tc.most == 0 {
+			if e.MaxWidth != 0 || e.MaxHeight != 0 {
+				t.Fatalf("%s: limited to %dx%d", tc.name, e.MaxWidth, e.MaxHeight)
+			}
+			continue
+		}
+		if mb := macroblocks(e.MaxWidth, e.MaxHeight); mb > tc.most || mb < tc.most*9/10 {
+			t.Fatalf("%s: %dx%d is %d macroblocks, want at most %d", tc.name, e.MaxWidth, e.MaxHeight, mb, tc.most)
+		}
+	}
+	// A frame rate beyond the level still leaves the bitrate cap in place.
+	e := videoEncoding{Level: 10}
+	e.fitLevel(176, 144, 100000)
+	if e.Bitrate != 80000 || e.MaxWidth < 2 {
+		t.Fatalf("extreme frame rate: %+v", e)
+	}
 }

@@ -78,7 +78,11 @@ func (p playbackRequest) transcodeCodecs(item media.Item, video, audio *media.St
 		return "", 0, encoding, false
 	}
 	encoding = p.h264Limits()
-	encoding.fitLevel(video.Width, video.Height)
+	fps := video.AverageFrameRate
+	if fps <= 0 {
+		fps = video.RealFrameRate
+	}
+	encoding.fitLevel(video.Width, video.Height, fps)
 	if bitrate := p.transcodeBitrate(item); bitrate < 0 {
 		return "", 0, encoding, false
 	} else if encoding.Bitrate == 0 || bitrate < encoding.Bitrate {
@@ -139,27 +143,32 @@ func (p playbackRequest) h264Limits() videoEncoding {
 }
 
 // h264Levels lists, for H.264 levels as Emby writes them (42 for 4.2), the
-// largest frame in 16x16 macroblocks (MaxFS) and the largest bitrate in
-// kbit/s for the Baseline and Main profiles (MaxBR), from ITU-T H.264 Table
-// A-1. High profile, which libx264 uses, allows 1.25 times MaxBR.
-var h264Levels = []struct{ level, macroblocks, kbps int }{
-	{10, 99, 64}, {11, 396, 192}, {12, 396, 384}, {13, 396, 768}, {20, 396, 2000},
-	{21, 792, 4000}, {22, 1620, 4000}, {30, 1620, 10000}, {31, 3600, 14000}, {32, 5120, 20000},
-	{40, 8192, 20000}, {41, 8192, 50000}, {42, 8704, 50000}, {50, 22080, 135000}, {51, 36864, 240000},
-	{52, 36864, 240000}, {60, 139264, 240000}, {61, 139264, 480000}, {62, 139264, 800000},
+// largest frame in 16x16 macroblocks (MaxFS), the largest macroblock rate per
+// second (MaxMBPS) and the largest bitrate in kbit/s for the Baseline and Main
+// profiles (MaxBR), from ITU-T H.264 Table A-1. High profile, which libx264
+// uses, allows 1.25 times MaxBR.
+var h264Levels = []struct{ level, macroblocks, macroblockRate, kbps int }{
+	{10, 99, 1485, 64}, {11, 396, 3000, 192}, {12, 396, 6000, 384}, {13, 396, 11880, 768}, {20, 396, 11880, 2000},
+	{21, 792, 19800, 4000}, {22, 1620, 20250, 4000}, {30, 1620, 40500, 10000}, {31, 3600, 108000, 14000}, {32, 5120, 216000, 20000},
+	{40, 8192, 245760, 20000}, {41, 8192, 245760, 50000}, {42, 8704, 522240, 50000}, {50, 22080, 589824, 135000}, {51, 36864, 983040, 240000},
+	{52, 36864, 2073600, 240000}, {60, 139264, 4177920, 240000}, {61, 139264, 8355840, 480000}, {62, 139264, 16711680, 800000},
 }
 
 // fitLevel caps the bitrate at the level's High profile maximum and lowers
 // MaxWidth and MaxHeight so that a source of width x height, scaled to the
 // current limits with its aspect ratio kept, also fits the largest frame of
-// the level. The level's macroblock rate, which bounds the frame rate, is
-// not checked. An unknown level changes nothing; an unknown size leaves the
-// size limits.
-func (e *videoEncoding) fitLevel(width, height int) {
+// the level and, at fps frames per second, its macroblock rate. The frame
+// rate is kept, as the segments follow the source's timestamps. An unknown
+// level changes nothing; an unknown size leaves the size limits, and an
+// unknown frame rate leaves the macroblock rate unchecked.
+func (e *videoEncoding) fitLevel(width, height int, fps float64) {
 	most, kbps := 0, 0
 	for _, l := range h264Levels {
 		if e.Level > 0 && l.level <= e.Level {
 			most, kbps = l.macroblocks, l.kbps
+			if fps > 0 {
+				most = min(most, max(int(float64(l.macroblockRate)/fps), 1))
+			}
 		}
 	}
 	if most == 0 {
