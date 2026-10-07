@@ -1,8 +1,10 @@
 package server
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"slices"
+	"sync"
 
 	"github.com/TokenCemetery/coach/internal/media"
 	"github.com/TokenCemetery/coach/internal/state"
@@ -41,15 +43,26 @@ func (s *Server) disconnectSession(id string) {
 }
 
 // Close stops hijacked connections, which http.Server.Shutdown does not own.
-// The caller still owns the HTTP server, store, media root and web assets.
+// Each client first gets ServerShuttingDown, which Emby Web shows as a
+// notice, and a going-away close frame; the connections are told in
+// parallel, each within socketFarewell. The caller still owns the HTTP
+// server, store, media root and web assets.
 func (s *Server) Close() {
 	s.socketMu.Lock()
 	defer s.socketMu.Unlock()
 	s.closing = true
+	notice, _ := json.Marshal(object{"MessageType": "ServerShuttingDown"})
+	var told sync.WaitGroup
 	for sock := range s.connections {
-		_ = sock.conn.Close()
 		delete(s.connections, sock)
+		told.Go(func() {
+			if sock.writeFrameWithin(opText, notice, socketFarewell) == nil {
+				_ = sock.writeFrameWithin(opClose, binary.BigEndian.AppendUint16(nil, 1001), socketFarewell)
+			}
+			_ = sock.conn.Close()
+		})
 	}
+	told.Wait()
 }
 
 func (s *Server) publishUserData(userID string, data object) {

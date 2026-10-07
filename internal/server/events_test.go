@@ -119,6 +119,11 @@ func TestUserDataEventsAndSessionLifecycle(t *testing.T) {
 	c3, r3 := openEventSocket(t, server, login(t, h))
 	api.Close()
 	api.Close()
+	// Shutdown says goodbye first (TestServerShuttingDown), then disconnects.
+	if kind, _ := expectSocketMessage(t, r3); kind != "ServerShuttingDown" {
+		t.Fatalf("message %q, want ServerShuttingDown", kind)
+	}
+	expectCloseFrame(t, r3, 1001)
 	expectDisconnected(t, c3, r3)
 	deadline := time.Now().Add(time.Second)
 	for api.sockets.Load() != 0 && time.Now().Before(deadline) {
@@ -289,5 +294,24 @@ func TestUserConfigurationUpdated(t *testing.T) {
 	if kind != "UserConfigurationUpdated" || json.Unmarshal(raw, &data) != nil || data.Id != user ||
 		data.Configuration["SubtitleMode"] != "Always" || data.Configuration["PlayDefaultAudioTrack"] != true || data.Policy == nil {
 		t.Fatalf("message %s %s", kind, raw)
+	}
+}
+
+// A stopping server tells each client before it closes the connection, and
+// Emby Web shows the notice (#25).
+func TestServerShuttingDown(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	api := New(store, "test", nil, &media.Catalog{Items: []media.Item{playbackMovie()}})
+	h := api.Handler()
+	server := httptest.NewServer(h)
+	defer server.Close()
+	_, r1 := openEventSocket(t, server, login(t, h))
+	_, r2 := openEventSocket(t, server, login(t, h))
+	api.Close()
+	for _, reader := range []*bufio.Reader{r1, r2} {
+		if kind, _ := expectSocketMessage(t, reader); kind != "ServerShuttingDown" {
+			t.Fatalf("message %q, want ServerShuttingDown", kind)
+		}
+		expectCloseFrame(t, reader, 1001)
 	}
 }

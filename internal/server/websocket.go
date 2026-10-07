@@ -38,6 +38,9 @@ const (
 	socketTimeout = 60 * time.Second
 	socketPing    = 20 * time.Second
 	socketWrite   = 10 * time.Second
+	// socketFarewell bounds the shutdown notice, so a stuck client cannot hold
+	// up the server's stop.
+	socketFarewell = time.Second
 	// A message is a control command, never bulk data; anything larger is a
 	// client defect or an attempt to make the server buffer without bound.
 	socketMaxMessage = 64 << 10
@@ -75,6 +78,11 @@ type socket struct {
 
 // writeFrame sends one unfragmented frame. Server frames are never masked.
 func (s *socket) writeFrame(opcode byte, payload []byte) error {
+	return s.writeFrameWithin(opcode, payload, socketWrite)
+}
+
+// writeFrameWithin is writeFrame with its own write deadline.
+func (s *socket) writeFrameWithin(opcode byte, payload []byte, within time.Duration) error {
 	frame := make([]byte, 2, len(payload)+10)
 	frame[0] = 0x80 | opcode
 	switch n := len(payload); {
@@ -90,7 +98,7 @@ func (s *socket) writeFrame(opcode byte, payload []byte) error {
 	frame = append(frame, payload...)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.conn.SetWriteDeadline(time.Now().Add(socketWrite)); err != nil {
+	if err := s.conn.SetWriteDeadline(time.Now().Add(within)); err != nil {
 		return err
 	}
 	_, err := s.conn.Write(frame)
