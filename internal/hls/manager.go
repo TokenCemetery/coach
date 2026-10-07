@@ -128,10 +128,11 @@ const segmentBits = 1<<32 - 1
 // segmentOf is n in the low bits of session.newest; out-of-range values,
 // which the playlist never names, share one value.
 func segmentOf(n int) uint64 {
-	if n < 0 || n >= segmentBits {
+	if n < 0 {
 		return segmentBits
 	}
-	return uint64(n)
+	// Compared as uint64: segmentBits does not fit a 32-bit int.
+	return min(uint64(n), segmentBits)
 }
 
 // begin registers a request for segment n as the newest and returns it.
