@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -95,5 +96,58 @@ func TestMovieCatalog(t *testing.T) {
 	expectStatus(t, w, 200)
 	if catalog.Items[0].ID != "b" {
 		t.Fatal("query sorting mutated catalogue")
+	}
+}
+
+// A library that appears with a rescan opens like one found at startup.
+func TestRescannedLibraryOpens(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	api := New(store, "test", nil, &media.Catalog{ID: "movies", Items: []media.Item{playbackMovie()}})
+	h := api.Handler()
+	token := login(t, h)
+	next := &media.Catalog{ID: "movies", Items: []media.Item{playbackMovie()},
+		Folders: []media.Item{{ID: "series", Kind: "Series", Name: "Show"}}}
+	api.SetCatalog(next)
+	for _, path := range []string{"/Items/" + next.SeriesLibraryID(), "/Users/" + store.Snapshot().User.ID + "/Items/" + next.SeriesLibraryID()} {
+		expectStatus(t, request(h, "GET", path, "", "", token), 200)
+	}
+}
+
+// Emby Web's Favorites tab filters its music rows by CollectionTypes (#76).
+func TestItemsByCollectionTypes(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	catalog := &media.Catalog{ID: "movies", Items: []media.Item{
+		playbackMovie(),
+		{ID: "episode", Kind: "Episode", Name: "Show S01E01", ParentID: "season", SeriesID: "series", SeasonID: "season", SeasonNumber: 1, EpisodeNumber: 1},
+	}}
+	catalog.Folders = []media.Item{
+		{ID: "series", Kind: "Series", Name: "Show", ParentID: catalog.SeriesLibraryID()},
+		{ID: "season", Kind: "Season", Name: "Season 1", ParentID: "series", SeriesID: "series", SeasonNumber: 1},
+	}
+	h := New(store, "test", nil, catalog).Handler()
+	token := login(t, h)
+	user := store.Snapshot().User.ID
+	for types, want := range map[string]string{"movies": "movie", "tvshows": "episode,season,series", "music": "", "music,Movies": "movie"} {
+		w := request(h, "GET", "/Users/"+user+"/Items?Recursive=true&SortBy=SortName&CollectionTypes="+types, "", "", token)
+		expectStatus(t, w, 200)
+		var page struct{ Items []struct{ Id string } }
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		ids := []string{}
+		for _, item := range page.Items {
+			ids = append(ids, item.Id)
+		}
+		slices.Sort(ids)
+		if got := strings.Join(ids, ","); got != want {
+			t.Fatalf("CollectionTypes=%s: %s, want %s", types, got, want)
+		}
+	}
+	// The same tab sorts favorite TV channels by channel number; Coach has
+	// none, so the sort falls through to the next key.
+	w := request(h, "GET", "/Users/"+user+"/Items?Recursive=true&IncludeItemTypes=TvChannel&SortBy=ChannelNumber,SortName", "", "", token)
+	expectStatus(t, w, 200)
+	if !strings.Contains(w.Body.String(), `"TotalRecordCount":0`) {
+		t.Fatalf("TV channels: %s", w.Body.String())
 	}
 }

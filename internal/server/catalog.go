@@ -208,7 +208,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			"startindex", "limit", "sortby", "sortorder", "isfolder", "isplayed", "isfavorite", "filters",
 			"fields", "enableimages", "enableimagetypes", "imagetypelimit", "enableuserdata", "enabletotalrecordcount", "groupitems",
 			"groupprogramsbyseries", "includesearchtypes", "isstandalonespecial", "collapseboxsetitems", "excludelocationtypes",
-			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids", "wassearched", "minpremieredate", "isunaired", "includenextup", "isspecialepisode", "ismissing", "isvirtualunaired":
+			"userid", "api_key", "x-mediabrowser-token", "reqformat", "listitemids", "wassearched", "minpremieredate", "isunaired", "includenextup", "isspecialepisode", "ismissing", "isvirtualunaired", "collectiontypes":
 		default:
 			if !strings.HasPrefix(key, "x-emby-") {
 				fail(w, 400, "UnsupportedQuery")
@@ -286,7 +286,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 	}
 	sortKeys := strings.Split(sortBy, ",")
 	for _, key := range sortKeys {
-		if !member("sortname,name,datecreated,dateplayed,runtime,indexnumber,parentindexnumber,datelastsearched,isfolder,filename,seriessortname", key) {
+		if !member("sortname,name,datecreated,dateplayed,runtime,indexnumber,parentindexnumber,datelastsearched,isfolder,filename,seriessortname,channelnumber", key) {
 			fail(w, 400, "UnsupportedSort")
 			return
 		}
@@ -319,6 +319,14 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 	items := []*media.Item{}
 	isCollection := func(item *media.Item) bool {
 		return catalog != nil && (item.ID == catalog.ID || item.ID == catalog.SeriesLibraryID())
+	}
+	// collectionType names the library an item belongs to, for CollectionTypes;
+	// Coach has only movie and TV libraries (#76).
+	collectionType := func(item *media.Item) string {
+		if (catalog != nil && item.ID == catalog.ID) || (!isCollection(item) && item.Type() == "Movie") {
+			return "movies"
+		}
+		return "tvshows"
 	}
 	if catalog != nil {
 		parent := query["parentid"]
@@ -359,6 +367,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 			kind = "CollectionFolder"
 		}
 		return (query["ids"] != "" && !member(query["ids"], id)) || member(query["excludeitemids"], id) ||
+			(query["collectiontypes"] != "" && !member(query["collectiontypes"], collectionType(item))) ||
 			(resume && !resumable(st, item.RunTimeTicks) && nextUp[id].IsZero()) ||
 			(query["includeitemtypes"] != "" && !member(query["includeitemtypes"], kind)) || member(query["excludeitemtypes"], kind) ||
 			(query["mediatypes"] != "" && (folder || !member(query["mediatypes"], "Video"))) ||
@@ -424,6 +433,9 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, latest, resum
 				comparison = strings.Compare(strings.ToLower(path.Base(a.Path)), strings.ToLower(path.Base(b.Path)))
 			case "seriessortname":
 				comparison = strings.Compare(strings.ToLower(a.SeriesName), strings.ToLower(b.SeriesName))
+			case "channelnumber":
+				// Coach has no channels: no item has a channel number (#76).
+				comparison = 0
 			default:
 				comparison = strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 			}
