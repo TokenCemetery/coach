@@ -113,8 +113,9 @@ func TestRescannedLibraryOpens(t *testing.T) {
 	}
 }
 
-// Emby Web's Favorites tab filters its music rows by CollectionTypes (#76).
-func TestItemsByCollectionTypes(t *testing.T) {
+// Queries Emby Web sends from the Favorites tab (#76) and the "Add to
+// playlist" dialog (#77).
+func TestItemsQueriesFromEmbyWeb(t *testing.T) {
 	store, _, _ := newTestServer(t)
 	catalog := &media.Catalog{ID: "movies", Items: []media.Item{
 		playbackMovie(),
@@ -143,6 +144,15 @@ func TestItemsByCollectionTypes(t *testing.T) {
 			t.Fatalf("CollectionTypes=%s: %s, want %s", types, got, want)
 		}
 	}
+	// "Add to playlist" lists the playlists the user can edit: none (#77).
+	for query, want := range map[string]string{"CanEditItems=true": `"TotalRecordCount":0`, "CanEditItems=false": `"TotalRecordCount":4`} {
+		w := request(h, "GET", "/Users/"+user+"/Items?Recursive=true&"+query, "", "", token)
+		expectStatus(t, w, 200)
+		if !strings.Contains(w.Body.String(), want) {
+			t.Fatalf("%s: %s", query, w.Body.String())
+		}
+	}
+	expectStatus(t, request(h, "GET", "/Users/"+user+"/Items?CanEditItems=maybe", "", "", token), 400)
 	// The same tab sorts favorite TV channels by channel number; Coach has
 	// none, so the sort falls through to the next key.
 	w := request(h, "GET", "/Users/"+user+"/Items?Recursive=true&IncludeItemTypes=TvChannel&SortBy=ChannelNumber,SortName", "", "", token)
