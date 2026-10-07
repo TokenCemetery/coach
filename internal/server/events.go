@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/TokenCemetery/coach/internal/media"
 	"github.com/TokenCemetery/coach/internal/state"
@@ -56,6 +57,10 @@ func (s *Server) Close() {
 	for sock := range s.connections {
 		delete(s.connections, sock)
 		told.Go(func() {
+			// A write already blocked on this client holds sock.mu for up to
+			// socketWrite; cutting the deadline makes it fail now. Setting a
+			// deadline is safe without the lock.
+			_ = sock.conn.SetWriteDeadline(time.Now().Add(socketFarewell))
 			if sock.writeFrameWithin(opText, notice, socketFarewell) == nil {
 				_ = sock.writeFrameWithin(opClose, binary.BigEndian.AppendUint16(nil, 1001), socketFarewell)
 			}

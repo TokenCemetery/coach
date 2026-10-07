@@ -315,3 +315,30 @@ func TestServerShuttingDown(t *testing.T) {
 		expectCloseFrame(t, reader, 1001)
 	}
 }
+
+// A client that stopped reading cannot hold up shutdown, even while its
+// writer is blocked in a write.
+func TestCloseDoesNotWaitForStuckClient(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	api := New(store, "test", nil, &media.Catalog{})
+	server, client := net.Pipe()
+	defer func() { _ = client.Close() }()
+	sock := &socket{conn: server, out: make(chan []byte, 1)}
+	api.socketMu.Lock()
+	api.connections[sock] = struct{}{}
+	api.socketMu.Unlock()
+	// The writer blocks: nobody reads the pipe, and the regular deadline is
+	// 10 s.
+	blocked := make(chan struct{})
+	go func() {
+		close(blocked)
+		_ = sock.writeFrame(opText, []byte(`{"MessageType":"UserDataChanged"}`))
+	}()
+	<-blocked
+	time.Sleep(100 * time.Millisecond)
+	began := time.Now()
+	api.Close()
+	if took := time.Since(began); took > 3*socketFarewell {
+		t.Fatalf("Close took %v with a stuck client", took)
+	}
+}
