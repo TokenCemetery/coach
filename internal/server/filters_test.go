@@ -106,3 +106,31 @@ func TestLibraryFilters(t *testing.T) {
 		}
 	}
 }
+
+// The value lists page like Items; Emby Web probes them with Limit=1.
+func TestFilterListPaging(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	catalog := &media.Catalog{ID: "movies", Items: []media.Item{
+		{ID: "a", Name: "A", Container: "avi", Streams: []media.Stream{{Type: "Video", Codec: "mpeg4"}}},
+		{ID: "b", Name: "B", Container: "mkv", Streams: []media.Stream{{Type: "Video", Codec: "h264"}}},
+		{ID: "c", Name: "C", Container: "mp4", Streams: []media.Stream{{Type: "Video", Codec: "hevc"}}},
+	}}
+	h := New(store, "test", nil, catalog).Handler()
+	token := login(t, h)
+	for query, want := range map[string]string{
+		"Limit=1&EnableTotalRecordCount=false": `"Items":[{"Id":"avi","Name":"avi"}],"TotalRecordCount":3`,
+		"StartIndex=1&Limit=1":                 `"Items":[{"Id":"mkv","Name":"mkv"}],"TotalRecordCount":3`,
+		"StartIndex=2&Limit=2":                 `"Items":[{"Id":"mp4","Name":"mp4"}],"TotalRecordCount":3`,
+		"StartIndex=9":                         `"Items":[],"TotalRecordCount":3`,
+		"StartIndex=2147483647&Limit=1000":     `"Items":[],"TotalRecordCount":3`,
+	} {
+		w := request(h, "GET", "/Containers?"+query, "", "", token)
+		expectStatus(t, w, 200)
+		if !strings.Contains(w.Body.String(), want) {
+			t.Fatalf("%s: %s", query, w.Body.String())
+		}
+	}
+	for _, query := range []string{"Limit=-1", "Limit=1001", "StartIndex=x", "StartIndex=2147483648"} {
+		expectStatus(t, request(h, "GET", "/Containers?"+query, "", "", token), 400)
+	}
+}

@@ -1,8 +1,10 @@
 package server
 
 import (
+	"math"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/TokenCemetery/coach/internal/media"
@@ -86,6 +88,12 @@ func failsMediaFilters(catalog *media.Catalog, item *media.Item, query map[strin
 func (s *Server) filterValueList(values func(media.Item) []string) authenticated {
 	return func(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 		query := r.URL.Query()
+		// Emby Web probes each list with Limit=1 to decide whether to show it.
+		start, limit, ok := pageBounds(query.Get("StartIndex"), query.Get("Limit"))
+		if !ok {
+			fail(w, 400, "InvalidPagination")
+			return
+		}
 		catalog := s.catalog()
 		found := []string{}
 		if catalog != nil && values != nil {
@@ -103,11 +111,13 @@ func (s *Server) filterValueList(values func(media.Item) []string) authenticated
 			}
 		}
 		slices.SortFunc(found, func(a, b string) int { return strings.Compare(strings.ToLower(a), strings.ToLower(b)) })
-		items := make([]object, 0, len(found))
-		for _, v := range found {
+		from := min(start, len(found))
+		page := found[from : from+min(limit, len(found)-from)]
+		items := make([]object, 0, len(page))
+		for _, v := range page {
 			items = append(items, object{"Name": v, "Id": v})
 		}
-		respond(w, 200, object{"Items": items, "TotalRecordCount": len(items)})
+		respond(w, 200, object{"Items": items, "TotalRecordCount": len(found)})
 	}
 }
 
@@ -135,6 +145,27 @@ func inFilterScope(catalog *media.Catalog, item *media.Item, parent, types strin
 		return true
 	}
 	return member(types, kind) || (kind == "Episode" && (member(types, "Series") || member(types, "Season")))
+}
+
+// pageBounds reads StartIndex and Limit with the bounds Items uses: both at
+// least 0 and Limit at most 1000, which is also the default.
+func pageBounds(startText, limitText string) (start, limit int, ok bool) {
+	limit = 1000
+	for _, p := range []struct {
+		text   string
+		target *int
+		most   int
+	}{{startText, &start, math.MaxInt32}, {limitText, &limit, 1000}} {
+		if p.text == "" {
+			continue
+		}
+		v, err := strconv.Atoi(p.text)
+		if err != nil || v < 0 || v > p.most {
+			return 0, 0, false
+		}
+		*p.target = v
+	}
+	return start, limit, true
 }
 
 func (s *Server) filterRoutes(mux *http.ServeMux) {
