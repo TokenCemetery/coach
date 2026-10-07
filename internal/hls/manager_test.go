@@ -160,15 +160,15 @@ func TestRemuxSegmentsMatchThePlan(t *testing.T) {
 }
 
 // hevcFixture builds a 40-second 10-bit HEVC video with odd dimensions,
-// closed GOPs of 2.6 seconds and AC3 audio that starts half a second before
-// the video.
-func hevcFixture(t *testing.T, name string) string {
+// GOPs of 2.6 seconds, closed unless openGOP, and AC3 audio that starts half
+// a second before the video.
+func hevcFixture(t *testing.T, name string, openGOP bool) string {
 	t.Helper()
 	path := fixture(t, "avc.mkv") // skips without FFmpeg
 	path = filepath.Join(filepath.Dir(path), name)
 	build := exec.CommandContext(context.Background(), "ffmpeg", "-v", "error", "-nostdin", //nolint:gosec // fixed arguments and temp paths
 		"-itsoffset", "0.5", "-f", "lavfi", "-i", "testsrc2=s=161x121:d=40:r=25", "-f", "lavfi", "-i", "sine=d=41",
-		"-c:v", "libx265", "-pix_fmt", "yuv420p10le", "-x265-params", "log-level=error:keyint=65:min-keyint=65:scenecut=0:open-gop=0", "-c:a", "ac3", path)
+		"-c:v", "libx265", "-pix_fmt", "yuv420p10le", "-x265-params", "log-level=error:keyint=65:min-keyint=65:scenecut=0:open-gop="+map[bool]string{false: "0", true: "1"}[openGOP], "-c:a", "ac3", path)
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Skipf("cannot build HEVC fixture: %v %s", err, out)
 	}
@@ -176,9 +176,10 @@ func hevcFixture(t *testing.T, name string) string {
 }
 
 func TestTranscodeSegmentsMatchThePlan(t *testing.T) {
-	for _, name := range []string{"in.mkv", "in.ts"} {
+	// Open GOPs in MPEG-TS used to restart at the next keyframe.
+	for _, name := range []string{"in.mkv", "in.ts", "open.mkv", "open.ts"} {
 		t.Run(name, func(t *testing.T) {
-			path := hevcFixture(t, name)
+			path := hevcFixture(t, name, strings.HasPrefix(name, "open"))
 			m, err := NewManager("ffmpeg", "ffprobe", filepath.Join(t.TempDir(), "transcode"))
 			if err != nil {
 				t.Fatal(err)

@@ -538,7 +538,18 @@ func (s *session) startJob(ffmpeg string, bounds []float64, start float64, n int
 	}
 	defer func() { _ = file.Close() }()
 	args := []string{"-v", "error", "-nostdin", "-protocol_whitelist", "fd"}
+	// trimmed cuts an encoded restart at the segment's start with filters,
+	// after decoding from the previous segment's keyframe. Seeking straight
+	// to the segment can land past its keyframe in MPEG-TS, and an HEVC
+	// stream with open GOPs then starts at the next keyframe. Copied audio
+	// cannot be filtered, so it keeps the direct seek.
+	trimmed := n > 0 && s.source.VideoEncode && (s.source.AudioStream < 0 || s.source.AudioEncode)
+	cut := strconv.FormatFloat(start+bounds[n]-0.001, 'f', 6, 64)
 	switch {
+	case trimmed:
+		// The filters see absolute timestamps (-copyts); -ss counts from the
+		// file's start time.
+		args = append(args, "-ss", strconv.FormatFloat(bounds[n-1]-0.001, 'f', 6, 64))
 	case n > 0 && s.source.VideoEncode:
 		// Decoding drops frames before -ss, which counts from the file's
 		// start time; an absolute -ss would count it twice.
@@ -556,11 +567,18 @@ func (s *session) startJob(ffmpeg string, bounds []float64, start float64, n int
 		args = append(args, "-map", "0:"+strconv.Itoa(s.source.AudioStream))
 	}
 	if s.source.VideoEncode {
-		args = append(args, encodeVideo(bounds[n:], start, s.source)...)
+		trim := ""
+		if trimmed {
+			trim = "trim=start=" + cut + ","
+		}
+		args = append(args, encodeVideo(bounds[n:], start, trim, s.source)...)
 	} else {
 		args = append(args, "-c:v", "copy")
 	}
 	if s.source.AudioEncode {
+		if trimmed {
+			args = append(args, "-af", "atrim=start="+cut)
+		}
 		args = append(args, "-c:a", "aac", "-ac", strconv.Itoa(s.source.AudioChannels))
 	} else {
 		args = append(args, "-c:a", "copy")
@@ -624,13 +642,14 @@ func (s *session) startJob(ffmpeg string, bounds []float64, start float64, n int
 
 // encodeVideo returns the FFmpeg options that encode the video to 8-bit
 // H.264 for the segments starting at bounds, relative to the file's start
-// time. Keyframes are forced on the source's keyframe plan, so the segments
+// time; trim, when set, is a filter that runs before scaling. Keyframes are
+// forced on the source's keyframe plan, so the segments
 // match those of a remux. The encoder keeps the source's time base (demux):
 // with the frame rate's, timestamps are rounded and a forced keyframe can
 // land one frame late. The picture keeps its aspect ratio, shrinks to fit
 // the source's MaxWidth and MaxHeight, and has even dimensions, as 4:2:0
 // requires.
-func encodeVideo(bounds []float64, start float64, source Source) []string {
+func encodeVideo(bounds []float64, start float64, trim string, source Source) []string {
 	keyframes := make([]string, len(bounds))
 	for i, b := range bounds {
 		keyframes[i] = strconv.FormatFloat(start+b-0.001, 'f', 6, 64)
@@ -641,7 +660,7 @@ func encodeVideo(bounds []float64, start float64, source Source) []string {
 		}
 		return "'min(" + size + "," + strconv.Itoa(limit) + ")'"
 	}
-	scale := "scale=w=" + bound(source.MaxWidth, "iw") + ":h=" + bound(source.MaxHeight, "ih") + ":force_original_aspect_ratio=decrease:force_divisible_by=2"
+	scale := trim + "scale=w=" + bound(source.MaxWidth, "iw") + ":h=" + bound(source.MaxHeight, "ih") + ":force_original_aspect_ratio=decrease:force_divisible_by=2"
 	args := []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
 		"-vf", scale, "-enc_time_base:v", "demux", "-fps_mode", "passthrough",
 		"-force_key_frames", strings.Join(keyframes, ",")}
