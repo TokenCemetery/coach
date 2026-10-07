@@ -260,3 +260,50 @@ func TestStaleRequestDoesNotMoveTheJob(t *testing.T) {
 		t.Fatalf("a stale request moved the job to %d", s.job.start)
 	}
 }
+
+// Seeking lists the same keyframes as reading every packet when they are
+// further apart than seekStep, as in the fixture.
+func TestKeyframesBySeekingMatchAFullScan(t *testing.T) {
+	for _, name := range []string{"in.mkv", "in.mp4"} {
+		t.Run(name, func(t *testing.T) {
+			path := fixture(t, name)
+			out, err := exec.CommandContext(context.Background(), "ffprobe", "-v", "error", "-select_streams", "0", //nolint:gosec // test fixture path
+				"-show_entries", "packet=pts_time,flags", "-of", "csv", path).Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want []float64
+			for _, line := range strings.Split(string(out), "\n") {
+				if v, key, ok := packet(strings.Split(line, ",")); ok && key {
+					want = append(want, v)
+				}
+			}
+			file, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = file.Close() }()
+			// The wrapper counts runs: the header and the seeks, no full scan.
+			ffprobe, _ := exec.LookPath("ffprobe")
+			dir := t.TempDir()
+			wrapper := filepath.Join(dir, "ffprobe")
+			script := "#!/bin/sh\necho run >> " + filepath.Join(dir, "runs") + "\nexec " + ffprobe + " \"$@\"\n"
+			if err := os.WriteFile(wrapper, []byte(script), 0o700); err != nil { //nolint:gosec // test script in a temp dir
+				t.Fatal(err)
+			}
+			got, start, err := keyframes(context.Background(), wrapper, file, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if runs, _ := os.ReadFile(filepath.Join(dir, "runs")); strings.Count(string(runs), "run") != 2 {
+				t.Fatalf("FFprobe ran %d times, want 2", strings.Count(string(runs), "run"))
+			}
+			for i := range got {
+				got[i] += start
+			}
+			if !equal(got, want) {
+				t.Fatalf("keyframes %v, full scan %v", got, want)
+			}
+		})
+	}
+}
