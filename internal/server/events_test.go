@@ -266,3 +266,28 @@ func sortedIDs(ids ...string) []string {
 	slices.Sort(ids)
 	return ids
 }
+
+func TestUserConfigurationUpdated(t *testing.T) {
+	store, _, _ := newTestServer(t)
+	api := New(store, "test", nil, &media.Catalog{Items: []media.Item{playbackMovie()}})
+	t.Cleanup(api.Close)
+	h := api.Handler()
+	server := httptest.NewServer(h)
+	defer server.Close()
+	token1, token2 := login(t, h), login(t, h)
+	user := store.Snapshot().User.ID
+	_, reader := openEventSocket(t, server, token2)
+	// UserSettings are not part of the user and send nothing.
+	expectStatus(t, request(h, "POST", "/UserSettings/"+user+"/Partial", "application/json", `{"theme":"dark"}`, token1), 204)
+	expectStatus(t, request(h, "POST", "/Users/"+user+"/Configuration/Partial", "application/json", `{"SubtitleMode":"Always"}`, token1), 204)
+	kind, raw := expectSocketMessage(t, reader)
+	var data struct {
+		Id            string
+		Configuration map[string]any
+		Policy        map[string]any
+	}
+	if kind != "UserConfigurationUpdated" || json.Unmarshal(raw, &data) != nil || data.Id != user ||
+		data.Configuration["SubtitleMode"] != "Always" || data.Configuration["PlayDefaultAudioTrack"] != true || data.Policy == nil {
+		t.Fatalf("message %s %s", kind, raw)
+	}
+}

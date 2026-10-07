@@ -144,17 +144,41 @@ func (s *Server) publish(message object, match func(*socket) bool) {
 	s.socketMu.Lock()
 	defer s.socketMu.Unlock()
 	for sock := range s.connections {
-		if !match(sock) {
+		if match(sock) {
+			s.enqueue(sock, body)
+		}
+	}
+}
+
+// publishUserConfiguration sends the user's connections the user as each of
+// them sees it after its settings changed. Emby Web replaces its cached user
+// with the message's, so the subtitle and audio preferences saved on one
+// device apply to playback started on another without a reload.
+func (s *Server) publishUserConfiguration(userID string) {
+	d := s.store.Snapshot()
+	s.socketMu.Lock()
+	defer s.socketMu.Unlock()
+	for sock := range s.connections {
+		if sock.userID != userID {
 			continue
 		}
-		select {
-		case sock.out <- body:
-		default:
-			// Disconnect on overflow instead of silently losing events or blocking
-			// API writes. A reconnecting client must reload its current state.
-			_ = sock.conn.Close()
-			delete(s.connections, sock)
+		// The avatar tag in the user is signed for the connection's token.
+		body, err := json.Marshal(object{"MessageType": "UserConfigurationUpdated", "Data": s.userDTO(d, sock.token)})
+		if err == nil {
+			s.enqueue(sock, body)
 		}
+	}
+}
+
+// enqueue queues body on sock. Caller holds s.socketMu.
+func (s *Server) enqueue(sock *socket, body []byte) {
+	select {
+	case sock.out <- body:
+	default:
+		// Disconnect on overflow instead of silently losing events or blocking
+		// API writes. A reconnecting client must reload its current state.
+		_ = sock.conn.Close()
+		delete(s.connections, sock)
 	}
 }
 

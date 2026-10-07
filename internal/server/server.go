@@ -279,7 +279,7 @@ func (s *Server) Handler() http.Handler {
 					fail(w, 400, "InvalidRequest")
 					return
 				}
-				s.changed(w, s.store.Change(token, func(d *state.Data, session *state.Session) {
+				err := s.store.Change(token, func(d *state.Data, session *state.Session) {
 					target := &d.User.Settings
 					if configuration {
 						target = &d.User.Configuration
@@ -290,7 +290,11 @@ func (s *Server) Handler() http.Handler {
 					for k, v := range settings {
 						(*target)[k] = v
 					}
-				}))
+				})
+				if err == nil && configuration {
+					s.publishUserConfiguration(session.UserID)
+				}
+				s.changed(w, err)
 			}))
 		}
 	}
