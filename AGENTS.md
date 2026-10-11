@@ -12,7 +12,7 @@
 For bugs, future problems, or features: open GitHub issue (not chat/local files). Issues preserve history and progress.
 
 ```console
-gh issue list --state all --search "keyword"   # look for an existing issue first
+gh issue list --state all --search "keyword sort:created-asc"   # look for an existing issue first, oldest first
 gh issue create --title "..." --body-file body.md --label "bug,P2"
 ```
 
