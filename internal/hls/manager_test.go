@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -429,5 +430,147 @@ func TestTimestampMap(t *testing.T) {
 				t.Fatalf("segment 1 starts at %.3f, want %.3f (map %d, file start %.3f)", got, want, mpegts, start)
 			}
 		})
+	}
+}
+
+// blockingProbe returns an FFprobe wrapper that records its PID in started
+// and waits until gate exists, for at most 30 seconds.
+func blockingProbe(t *testing.T) (wrapper, started, gate string) {
+	t.Helper()
+	ffprobe, err := exec.LookPath("ffprobe")
+	if err != nil {
+		t.Skip("ffprobe required")
+	}
+	dir := t.TempDir()
+	wrapper, started, gate = filepath.Join(dir, "ffprobe"), filepath.Join(dir, "started"), filepath.Join(dir, "gate")
+	script := "#!/bin/sh\necho $$ >> " + started + "\ni=0\nwhile [ ! -e " + gate + " ] && [ $i -lt 600 ]; do sleep 0.05; i=$((i+1)); done\nexec " + ffprobe + " \"$@\"\n"
+	if err := os.WriteFile(wrapper, []byte(script), 0o700); err != nil { //nolint:gosec // test script in a temp dir
+		t.Fatal(err)
+	}
+	return wrapper, started, gate
+}
+
+// waitRunning waits until n FFprobe processes have started and returns their
+// PIDs.
+func waitRunning(t *testing.T, started string, n int) []string {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if data, _ := os.ReadFile(started); len(strings.Fields(string(data))) >= n {
+			return strings.Fields(string(data))
+		}
+	}
+	t.Fatalf("fewer than %d FFprobe processes started", n)
+	return nil
+}
+
+// At most maxScans keyframe listings run at once; the others wait for a slot
+// and Close stops them all (#23).
+func TestKeyframeListingsAreLimited(t *testing.T) {
+	path := fixture(t, "in.mkv")
+	for _, closing := range []bool{false, true} {
+		wrapper, started, gate := blockingProbe(t)
+		m, err := NewManager("ffmpeg", wrapper, filepath.Join(t.TempDir(), "transcode"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(m.Close)
+		sources := make([]Source, maxScans+1)
+		for i := range sources {
+			sources[i] = Source{ItemID: strconv.Itoa(i), Version: "1", Open: func() (*os.File, error) { return os.Open(path) }}
+			m.Prepare(sources[i])
+		}
+		pids := waitRunning(t, started, maxScans)
+		time.Sleep(300 * time.Millisecond)
+		if data, _ := os.ReadFile(started); len(strings.Fields(string(data))) != maxScans {
+			t.Fatalf("%d listings running, limit %d", len(strings.Fields(string(data))), maxScans)
+		}
+		if closing {
+			m.Close()
+			for _, pid := range pids {
+				n, _ := strconv.Atoi(pid)
+				if err := syscall.Kill(n, 0); !errors.Is(err, syscall.ESRCH) {
+					t.Fatalf("FFprobe %d survived Close: %v", n, err)
+				}
+			}
+			if _, _, err := m.bounds(context.Background(), sources[0]); err == nil {
+				t.Fatal("a stopped listing reported keyframes")
+			}
+			continue
+		}
+		if err := os.WriteFile(gate, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for _, source := range sources {
+			if bounds, _, err := m.bounds(context.Background(), source); err != nil || len(bounds) == 0 {
+				t.Fatalf("listing %s: %v %v", source.ItemID, bounds, err)
+			}
+		}
+	}
+}
+
+// A failed FFmpeg job is an error, not a segment, and other sessions keep
+// working (#23).
+func TestFailedJobIsReported(t *testing.T) {
+	path := fixture(t, "in.mkv")
+	m, err := NewManager("ffmpeg", "ffprobe", filepath.Join(t.TempDir(), "transcode"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	good := Source{ItemID: "movie", Version: "1", Duration: 40, VideoStream: 0, AudioStream: 1, AudioEncode: true, AudioChannels: 2,
+		Open: func() (*os.File, error) { return os.Open(path) }}
+	broken := good
+	broken.AudioStream = 7 // FFmpeg exits with an error: no such stream
+	ctx := context.Background()
+	for _, n := range []int{0, 2} {
+		if file, err := m.Segment(ctx, "a", "owner", broken, n); !errors.Is(err, ErrSegment) {
+			if file != nil {
+				_ = file.Close()
+			}
+			t.Fatalf("segment %d of a failing job: %v", n, err)
+		}
+	}
+	file, err := m.Segment(ctx, "b", "owner", good, 0)
+	if err != nil {
+		t.Fatalf("another session: %v", err)
+	}
+	_ = file.Close()
+}
+
+// A session without requests for idleTimeout loses its job and segments: its
+// client went away without stopping it (#23).
+func TestIdleSessionIsReaped(t *testing.T) {
+	path := fixture(t, "in.mkv")
+	m, err := NewManager("ffmpeg", "ffprobe", filepath.Join(t.TempDir(), "transcode"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	source := Source{ItemID: "movie", Version: "1", Duration: 40, VideoStream: 0, AudioStream: 1, AudioEncode: true, AudioChannels: 2,
+		Open: func() (*os.File, error) { return os.Open(path) }}
+	for _, id := range []string{"idle", "active"} {
+		file, err := m.Segment(context.Background(), id, "owner", source, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = file.Close()
+	}
+	m.mu.Lock()
+	idle, active := m.sessions["idle"], m.sessions["active"]
+	m.mu.Unlock()
+	idle.mu.Lock()
+	idle.lastAccess = time.Now().Add(-idleTimeout - time.Second)
+	j := idle.job
+	idle.mu.Unlock()
+	m.reapIdle()
+	m.mu.Lock()
+	_, idleOpen := m.sessions["idle"]
+	_, activeOpen := m.sessions["active"]
+	m.mu.Unlock()
+	if idleOpen || !j.finished() || exists(idle.dir) {
+		t.Fatalf("idle session: open %v, job finished %v, directory kept %v", idleOpen, j.finished(), exists(idle.dir))
+	}
+	if !activeOpen || !exists(active.dir) {
+		t.Fatal("the active session was reaped")
 	}
 }

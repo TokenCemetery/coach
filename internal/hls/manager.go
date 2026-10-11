@@ -40,6 +40,9 @@ const (
 	idleTimeout = 60 * time.Second
 	pollEvery   = 100 * time.Millisecond
 	maxCached   = 64
+	// maxScans caps concurrent keyframe listings, which may read whole
+	// files; more wait for a slot.
+	maxScans = 2
 )
 
 var (
@@ -96,6 +99,11 @@ type Manager struct {
 	closed   bool
 	stop     chan struct{}
 	reaped   chan struct{}
+
+	scans     chan struct{} // a slot per running keyframe listing
+	scanCtx   context.Context
+	stopScans context.CancelFunc
+	scanning  sync.WaitGroup
 }
 
 type keyframeEntry struct {
@@ -177,12 +185,13 @@ func NewManager(ffmpeg, ffprobe, dir string) (*Manager, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	m := &Manager{ffmpeg: ffmpeg, ffprobe: ffprobe, dir: dir, sessions: map[string]*session{}, cache: map[string]*keyframeEntry{}, stop: make(chan struct{}), reaped: make(chan struct{})}
+	m := &Manager{ffmpeg: ffmpeg, ffprobe: ffprobe, dir: dir, sessions: map[string]*session{}, cache: map[string]*keyframeEntry{}, stop: make(chan struct{}), reaped: make(chan struct{}), scans: make(chan struct{}, maxScans)}
+	m.scanCtx, m.stopScans = context.WithCancel(context.Background())
 	go m.reap()
 	return m, nil
 }
 
-// Close stops every job and removes all segments.
+// Close stops every job and keyframe listing and removes all segments.
 func (m *Manager) Close() {
 	m.mu.Lock()
 	if m.closed {
@@ -193,11 +202,13 @@ func (m *Manager) Close() {
 	sessions := m.sessions
 	m.sessions = map[string]*session{}
 	m.mu.Unlock()
+	m.stopScans()
 	close(m.stop)
 	<-m.reaped
 	for _, s := range sessions {
 		s.close()
 	}
+	m.scanning.Wait()
 	_ = os.RemoveAll(m.dir)
 }
 
@@ -211,19 +222,25 @@ func (m *Manager) reap() {
 			return
 		case <-ticker.C:
 		}
-		m.mu.Lock()
-		var idle []string
-		for id, s := range m.sessions {
-			s.mu.Lock()
-			if time.Since(s.lastAccess) > idleTimeout {
-				idle = append(idle, id)
-			}
-			s.mu.Unlock()
+		m.reapIdle()
+	}
+}
+
+// reapIdle ends the sessions without requests for idleTimeout: their client
+// went away without stopping them.
+func (m *Manager) reapIdle() {
+	m.mu.Lock()
+	var idle []string
+	for id, s := range m.sessions {
+		s.mu.Lock()
+		if time.Since(s.lastAccess) > idleTimeout {
+			idle = append(idle, id)
 		}
-		m.mu.Unlock()
-		for _, id := range idle {
-			m.remove(id)
-		}
+		s.mu.Unlock()
+	}
+	m.mu.Unlock()
+	for _, id := range idle {
+		m.remove(id)
 	}
 }
 
@@ -300,12 +317,17 @@ func (m *Manager) Prepare(source Source) {
 
 // bounds returns the cached segment plan and the file's start time, computing
 // them once per file version. The computation is not tied to ctx, so an
-// impatient client does not waste it.
+// impatient client does not waste it; at most maxScans run at once, and
+// Close stops them.
 func (m *Manager) bounds(ctx context.Context, source Source) ([]float64, float64, error) {
 	key := source.ItemID + "/" + source.Version + "/" + strconv.Itoa(source.VideoStream)
 	m.mu.Lock()
 	entry, ok := m.cache[key]
 	if !ok {
+		if m.closed {
+			m.mu.Unlock()
+			return nil, 0, ErrBusy
+		}
 		if len(m.cache) >= maxCached {
 			for k, e := range m.cache {
 				select {
@@ -320,15 +342,24 @@ func (m *Manager) bounds(ctx context.Context, source Source) ([]float64, float64
 		}
 		entry = &keyframeEntry{done: make(chan struct{})}
 		m.cache[key] = entry
-		go func() { //nolint:gosec // deliberately outlives the request: the next one reuses the result
+		m.scanning.Add(1)
+		go func() { // deliberately outlives the request: the next one reuses the result
+			defer m.scanning.Done()
 			defer close(entry.done)
+			select {
+			case m.scans <- struct{}{}:
+			case <-m.scanCtx.Done():
+				entry.err = m.scanCtx.Err()
+				return
+			}
+			defer func() { <-m.scans }()
 			file, err := source.Open()
 			if err != nil {
 				entry.err = err
 				return
 			}
 			defer func() { _ = file.Close() }()
-			times, start, err := keyframes(context.Background(), m.ffprobe, file, source.VideoStream)
+			times, start, err := keyframes(m.scanCtx, m.ffprobe, file, source.VideoStream)
 			if err != nil {
 				slog.Warn("Keyframe listing failed", "item", source.ItemID)
 				entry.err = err
