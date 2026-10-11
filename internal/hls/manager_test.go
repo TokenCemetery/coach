@@ -537,6 +537,64 @@ func TestFailedJobIsReported(t *testing.T) {
 	_ = file.Close()
 }
 
+// FFmpeg killed by a signal, as by the OOM killer, ends its job like an FFmpeg
+// error; a request the job would have reached restarts it instead of waiting
+// on the dead process (#31).
+func TestKilledJobIsRestarted(t *testing.T) {
+	path := fixtureOf(t, "long.mkv", 180)
+	m, err := NewManager("ffmpeg", "ffprobe", filepath.Join(t.TempDir(), "transcode"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	source := Source{ItemID: "long", Version: "1", Duration: 180, VideoStream: 0, AudioStream: 1,
+		Open: func() (*os.File, error) { return os.Open(path) }}
+	ctx := context.Background()
+	file, err := m.Segment(ctx, "a", "owner", source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = file.Close()
+	m.mu.Lock()
+	s := m.sessions["a"]
+	m.mu.Unlock()
+	s.mu.Lock()
+	j := s.job
+	s.mu.Unlock()
+	// The job pauses maxLead segments ahead of the request, before the end.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		j.mu.Lock()
+		paused := j.paused
+		j.mu.Unlock()
+		if paused {
+			break
+		}
+		if time.Now().After(deadline) || j.finished() {
+			t.Fatal("job did not pause")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := j.cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	<-j.done
+	if j.err == nil {
+		t.Fatal("killed job reported no error")
+	}
+	next := j.completedSegment() + 1
+	file, err = m.Segment(ctx, "a", "owner", source, next)
+	if err != nil {
+		t.Fatalf("segment %d after the kill: %v", next, err)
+	}
+	_ = file.Close()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.job == j {
+		t.Fatal("the request reused the killed job")
+	}
+}
+
 // A session without requests for idleTimeout loses its job and segments: its
 // client went away without stopping it (#23).
 func TestIdleSessionIsReaped(t *testing.T) {
