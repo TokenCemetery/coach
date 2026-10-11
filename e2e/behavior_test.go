@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -282,6 +283,80 @@ var behaviors = []behavior{
 			}
 			if got, err := isFavorite(); err != nil || !got {
 				check.Errorf("after recovery: IsFavorite %v, err %v, want true", got, err)
+			}
+		},
+	},
+	{
+		Key:     "backup-restores-after-forced-stop",
+		Title:   "A copy of the stopped data directory restores after a forced stop",
+		Feature: "UserLibraryService",
+		Run: func(inst *Instance, check *Check) {
+			favorite := Request{Method: "POST", Path: "/Users/" + inst.IDs.UserID + "/FavoriteItems/" + inst.IDs.MovieID}
+			if resp, err := inst.Send(favorite, true); err != nil || resp.Status != 200 {
+				check.Errorf("favorite: status %d, err %v, want 200", resp.Status, err)
+				return
+			}
+			// The README procedure: stop Coach, copy the files of the data
+			// directory, start Coach.
+			backup, err := os.MkdirTemp("", "coach-e2e-backup-")
+			if err != nil {
+				check.Errorf("backup directory: %v", err)
+				return
+			}
+			defer func() { _ = os.RemoveAll(backup) }()
+			if err := inst.Restart(func(data string) error { return copyDir(data, backup) }); err != nil {
+				check.Errorf("back up: %v", err)
+				return
+			}
+			// Changes after the backup, then a forced stop.
+			changes := []Request{
+				{Method: "DELETE", Path: favorite.Path},
+				{Method: "POST", Path: "/Users/" + inst.IDs.UserID + "/PlayedItems/" + inst.IDs.MovieID},
+				{Method: "POST", Path: "/Users/" + inst.IDs.UserID + "/Images/Primary/Delete"},
+			}
+			for _, r := range changes {
+				if resp, err := inst.Send(r, true); err != nil || resp.Status >= 300 {
+					check.Errorf("%s %s: status %d, err %v", r.Method, r.Path, resp.Status, err)
+					return
+				}
+			}
+			if err := inst.KillAndRestart(); err != nil {
+				check.Errorf("restart after SIGKILL: %v", err)
+				return
+			}
+			// Restore: stop Coach, replace the files with the copy, start Coach.
+			restore := func(data string) error {
+				entries, err := os.ReadDir(data)
+				if err != nil {
+					return err
+				}
+				for _, e := range entries {
+					if e.Type().IsRegular() {
+						if err := os.Remove(filepath.Join(data, e.Name())); err != nil {
+							return err
+						}
+					}
+				}
+				return copyDir(backup, data)
+			}
+			if err := inst.Restart(restore); err != nil {
+				check.Errorf("restore: %v", err)
+				return
+			}
+			// The session of the copy signs in, and its state is back.
+			var item struct {
+				UserData struct{ IsFavorite, Played bool }
+			}
+			if err := inst.Get("/emby/Users/"+inst.IDs.UserID+"/Items/"+inst.IDs.MovieID, &item); err != nil {
+				check.Errorf("item after restore: %v", err)
+				return
+			}
+			if !item.UserData.IsFavorite || item.UserData.Played {
+				check.Errorf("after restore: IsFavorite %v, Played %v, want the backup's true, false", item.UserData.IsFavorite, item.UserData.Played)
+			}
+			avatar := Request{Method: "GET", Path: "/Users/" + inst.IDs.UserID + "/Images/Primary"}
+			if resp, err := inst.Send(avatar, true); err != nil || resp.Status != 200 || resp.ContentType != "image/png" {
+				check.Errorf("avatar after restore: status %d, type %q, err %v, want 200 image/png", resp.Status, resp.ContentType, err)
 			}
 		},
 	},

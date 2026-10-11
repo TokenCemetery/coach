@@ -135,6 +135,22 @@ func (s *Suite) Start() (*Instance, error) {
 func (inst *Instance) KillAndRestart() error {
 	_ = inst.cmd.Process.Kill()
 	_ = inst.cmd.Wait()
+	return inst.restart()
+}
+
+// Restart stops the process with SIGTERM, runs offline on its data directory,
+// as an operator would with Coach stopped, and starts it again on the same
+// state, address and media.
+func (inst *Instance) Restart(offline func(data string) error) error {
+	inst.terminate()
+	if err := offline(inst.data); err != nil {
+		return err
+	}
+	return inst.restart()
+}
+
+// restart starts the stopped process again with the same arguments.
+func (inst *Instance) restart() error {
 	inst.cmd = exec.CommandContext(context.Background(), inst.args[0], inst.args[1:]...) //nolint:gosec // see NewSuite
 	inst.cmd.Stderr = inst.stderr
 	if err := inst.cmd.Start(); err != nil {
@@ -148,6 +164,12 @@ func (inst *Instance) KillAndRestart() error {
 
 // Stop terminates the process and removes its state.
 func (inst *Instance) Stop() {
+	inst.terminate()
+	_ = os.RemoveAll(inst.data)
+}
+
+// terminate stops the process with SIGTERM, or SIGKILL after 10 seconds.
+func (inst *Instance) terminate() {
 	if inst.cmd.Process != nil {
 		_ = inst.cmd.Process.Signal(syscall.SIGTERM)
 		done := make(chan struct{})
@@ -159,7 +181,6 @@ func (inst *Instance) Stop() {
 			<-done
 		}
 	}
-	_ = os.RemoveAll(inst.data)
 }
 
 func (inst *Instance) waitReady() error {
@@ -371,11 +392,11 @@ func copyDir(src, dst string) error {
 		if !e.Type().IsRegular() || strings.HasSuffix(e.Name(), ".lock") {
 			continue
 		}
-		raw, err := os.ReadFile(filepath.Join(src, e.Name())) //nolint:gosec // src is the template dir created by NewSuite
+		raw, err := os.ReadFile(filepath.Join(src, e.Name())) //nolint:gosec // src is a directory the test created
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(dst, e.Name()), raw, 0o600); err != nil { //nolint:gosec // dst is a temp dir; names come from the template dir
+		if err := os.WriteFile(filepath.Join(dst, e.Name()), raw, 0o600); err != nil { //nolint:gosec // dst is a directory the test created; names come from src
 			return err
 		}
 	}

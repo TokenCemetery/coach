@@ -223,3 +223,43 @@ func TestIdentityCarriesOnlyPublicFields(t *testing.T) {
 		t.Fatal("identity carries private state")
 	}
 }
+
+// TestOpenFirstReleaseState opens a state file that the first release
+// (172bee0) wrote after -init, a login, a favorite and a progress report.
+// Schema v1 has only gained fields since; a schema change must keep this file
+// opening with its data.
+func TestOpenFirstReleaseState(t *testing.T) {
+	dir := t.TempDir()
+	raw, err := os.ReadFile(filepath.Join("testdata", "state-172bee0.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), raw, 0600); err != nil { //nolint:gosec // dir is t.TempDir(); raw is the fixture
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const item = "1c2a5d7bc7e1f3b93feec81d7240491f"
+	data := s.Snapshot()
+	if old := data.User.Items[item]; len(data.Sessions) != 1 || old.PositionTicks != 12340000 || !old.IsFavorite {
+		t.Fatalf("first release state not carried over: sessions %d, item %+v", len(data.Sessions), old)
+	}
+	token, _, err := s.Login("viewer", "old-release-test-password", Session{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetItem(token, item, func(state *ItemState) { state.Played = true }); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if got := s.Snapshot().User.Items[item]; !got.Played || !got.IsFavorite || got.PositionTicks != 12340000 {
+		t.Fatalf("after a write and reopen: %+v", got)
+	}
+}
