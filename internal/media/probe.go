@@ -61,7 +61,7 @@ func newProbe(ctx context.Context) (func(context.Context, *os.File) (Item, error
 			"-max_streams", "64", "-fd", "3", "-i", "fd:", "-of", "json",
 			// Clients decide direct play from codec profile, level and pixel
 			// format, so those are probed alongside the basic descriptors.
-			"-show_entries", "format=duration:stream=index,codec_type,codec_name,codec_tag_string,profile,level,width,height,channels,channel_layout,sample_rate,bit_rate,pix_fmt,bits_per_raw_sample,refs,avg_frame_rate,r_frame_rate,time_base,field_order:stream_tags=language,title:stream_disposition=default,forced,attached_pic,hearing_impaired")
+			"-show_entries", "format=duration:stream=index,codec_type,codec_name,codec_tag_string,profile,level,width,height,channels,channel_layout,sample_rate,bit_rate,pix_fmt,bits_per_raw_sample,refs,avg_frame_rate,r_frame_rate,time_base,field_order:stream_tags=language,title:stream_disposition=default,forced,attached_pic,hearing_impaired:stream_side_data=rotation")
 		if err != nil {
 			return Item{}, err
 		}
@@ -122,6 +122,7 @@ func parseProbe(data []byte) (Item, error) {
 				Language string
 				Title    string
 			}
+			SideData    []struct{ Rotation float64 } `json:"side_data_list"`
 			Disposition struct {
 				Default         int
 				Forced          int
@@ -156,6 +157,11 @@ func parseProbe(data []byte) (Item, error) {
 			stream.BitDepth, _ = strconv.Atoi(raw.BitDepth)
 			stream.AverageFrameRate = frameRate(raw.AvgFrameRate)
 			stream.RealFrameRate = frameRate(raw.RFrameRate)
+			for _, side := range raw.SideData {
+				if side.Rotation != 0 {
+					stream.Rotation = (int(math.Round(side.Rotation))%360 + 360) % 360
+				}
+			}
 		case "audio":
 			stream.Type, stream.Channels = "Audio", raw.Channels
 			stream.ChannelLayout = raw.ChannelLayout

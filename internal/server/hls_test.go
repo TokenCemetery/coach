@@ -63,6 +63,19 @@ func TestPlaybackInfoRemux(t *testing.T) {
 	if q.Get("VideoCodec") != "h264" || q.Get("AudioCodec") != "aac" || q.Get("AudioStreamIndex") != "2" || q.Get("MaxAudioChannels") != "" || q.Get("api_key") != token {
 		t.Fatalf("aac remux query %v", q)
 	}
+	// MPEG-TS drops the display rotation, so rotated video is encoded
+	// instead; FFmpeg rotates the frames before scaling them to the level.
+	catalog.Items[0].Streams[0].Rotation = 90
+	if q := transcoding(info("", hlsProfile)); q.Get("VideoCodec") != "h264" || q.Get("VideoBitrate") == "" {
+		t.Fatalf("rotated video query %v", q)
+	}
+	q = transcoding(info("", strings.Replace(hlsProfile, `"Value":"51"`, `"Value":"30"`, 1)))
+	maxWidth, _ := strconv.Atoi(q.Get("MaxWidth"))
+	maxHeight, _ := strconv.Atoi(q.Get("MaxHeight"))
+	if maxWidth == 0 || maxWidth >= maxHeight {
+		t.Fatalf("rotated level 3.0 query %v", q)
+	}
+	catalog.Items[0].Streams[0].Rotation = 0
 	// AC3 is not accepted in HLS: it is encoded to stereo AAC.
 	q = transcoding(info("AudioStreamIndex=1", hlsProfile))
 	if q.Get("AudioCodec") != "aac" || q.Get("AudioStreamIndex") != "1" || q.Get("MaxAudioChannels") != "2" {

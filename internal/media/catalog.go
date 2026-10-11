@@ -99,6 +99,7 @@ type Stream struct {
 	TimeBase          string  `json:",omitempty"`
 	Width             int     `json:",omitempty"`
 	Height            int     `json:",omitempty"`
+	Rotation          int     `json:",omitempty"` // counterclockwise for display, 0-359 degrees
 	BitDepth          int     `json:",omitempty"`
 	RefFrames         int     `json:",omitempty"`
 	AverageFrameRate  float64 `json:",omitempty"`

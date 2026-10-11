@@ -146,8 +146,8 @@ func TestPlaybackProfileConditions(t *testing.T) {
 		{"sample rate alias", `"CodecProfiles":[{"Type":"VideoAudio","Conditions":[{"Condition":"LessThanEqual","Property":"SampleRate","Value":"48000"}]}]`, true},
 		{"unrelated codec", `"CodecProfiles":[{"Type":"Video","Codec":"hevc","Conditions":[{"Condition":"LessThanEqual","Property":"Width","Value":"1280"}]}]`, true},
 		{"unrelated container", `"CodecProfiles":[{"Type":"Video","Container":"avi","Conditions":[{"Condition":"LessThanEqual","Property":"Width","Value":"1280"}]}]`, true},
-		{"unknown required", `"CodecProfiles":[{"Type":"Video","Conditions":[{"Condition":"Equals","Property":"VideoRotation","Value":0}]}]`, false},
-		{"unknown optional", `"CodecProfiles":[{"Type":"Video","Conditions":[{"Condition":"Equals","Property":"VideoRotation","Value":0,"IsRequired":false}]}]`, true},
+		{"unknown required", `"CodecProfiles":[{"Type":"Video","Conditions":[{"Condition":"Equals","Property":"IsAnamorphic","Value":"false"}]}]`, false},
+		{"unknown optional", `"CodecProfiles":[{"Type":"Video","Conditions":[{"Condition":"Equals","Property":"IsAnamorphic","Value":"false","IsRequired":false}]}]`, true},
 		{"apply false", `"CodecProfiles":[{"Type":"Video","ApplyConditions":[{"Condition":"Equals","Property":"VideoProfile","Value":"main"}],"Conditions":[{"Condition":"LessThanEqual","Property":"Width","Value":"1280"}]}]`, true},
 		{"apply true", `"CodecProfiles":[{"Type":"Video","ApplyConditions":[{"Condition":"Equals","Property":"VideoProfile","Value":"High"}],"Conditions":[{"Condition":"LessThanEqual","Property":"Width","Value":"1280"}]}]`, false},
 		{"container condition", `"ContainerProfiles":[{"Type":"Video","Container":"mp4","Conditions":[{"Condition":"LessThanEqual","Property":"NumAudioStreams","Value":"1"}]}]`, false},
@@ -162,6 +162,18 @@ func TestPlaybackProfileConditions(t *testing.T) {
 				t.Fatalf("compatible=%v, want %v", got, tc.allowed)
 			}
 		})
+	}
+	// Emby Web on Tizen accepts only unrotated video.
+	var tizen deviceProfile
+	if err := json.Unmarshal([]byte(strings.TrimSuffix(compatibleProfile, "}")+
+		`,"CodecProfiles":[{"Type":"Video","Conditions":[{"Condition":"Equals","Property":"VideoRotation","Value":0,"IsRequired":false}]}]}`), &tizen); err != nil {
+		t.Fatal(err)
+	}
+	rotated := playbackMovie()
+	rotated.Streams[0].Rotation = 90
+	rotatedVideo, rotatedAudio := playbackStreams(rotated, nil)
+	if !supportsProfile(&tizen, item, video, audio) || supportsProfile(&tizen, rotated, rotatedVideo, rotatedAudio) {
+		t.Fatal("VideoRotation must accept only unrotated video")
 	}
 	for _, tc := range []struct {
 		op, value string

@@ -51,9 +51,10 @@ func (p playbackRequest) hlsSubtitles() bool {
 // remuxCodecs returns the codecs of an HLS remux the profile accepts: the
 // video is copied, and the audio is copied when its codec is accepted and
 // encoded to AAC otherwise. A video codec, profile or bitrate the client
-// rejects rules remux out; transcodeCodecs covers that case.
+// rejects rules remux out; transcodeCodecs covers that case. So does rotated
+// video: MPEG-TS cannot carry its display rotation, which encoding applies.
 func (p playbackRequest) remuxCodecs(item media.Item, video, audio *media.Stream) (videoCodec, audioCodec string, channels int, ok bool) {
-	if video == nil || p.DeviceProfile == nil || !p.withinBitrate(item) {
+	if video == nil || p.DeviceProfile == nil || !p.withinBitrate(item) || video.Rotation != 0 {
 		return "", "", 0, false
 	}
 	for _, tp := range p.DeviceProfile.TranscodingProfiles {
@@ -102,7 +103,12 @@ func (p playbackRequest) transcodeCodecs(item media.Item, video, audio *media.St
 	if fps <= 0 {
 		fps = video.RealFrameRate
 	}
-	encoding.fitLevel(video.Width, video.Height, fps)
+	// FFmpeg rotates the frames before scaling them.
+	width, height := video.Width, video.Height
+	if video.Rotation%180 == 90 {
+		width, height = height, width
+	}
+	encoding.fitLevel(width, height, fps)
 	if bitrate := p.transcodeBitrate(item); bitrate < 0 {
 		return "", 0, encoding, false
 	} else if encoding.Bitrate == 0 || bitrate < encoding.Bitrate {

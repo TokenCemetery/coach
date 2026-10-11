@@ -216,6 +216,8 @@ func conditionProperty(name string, item media.Item, video, audio *media.Stream)
 		return positive(video.RealFrameRate)
 	case "refframes":
 		return positive(float64(video.RefFrames))
+	case "videorotation":
+		return float64(video.Rotation)
 	case "isinterlaced":
 		return video.IsInterlaced
 	case "numaudiostreams", "numvideostreams":

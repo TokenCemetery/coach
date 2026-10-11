@@ -11,7 +11,7 @@ import (
 
 func TestParseProbe(t *testing.T) {
 	item, err := parseProbe([]byte(`{"format":{"duration":"1.25"},"streams":[
-		{"index":0,"codec_type":"video","codec_name":"h264","width":1920,"height":1080,"disposition":{"default":1}},
+		{"index":0,"codec_type":"video","codec_name":"h264","width":1920,"height":1080,"disposition":{"default":1},"side_data_list":[{},{"rotation":-90}]},
 		{"index":1,"codec_type":"audio","codec_name":"aac","channels":2,"sample_rate":"48000","bit_rate":"128000","tags":{"language":"rus"}},
 		{"index":2,"codec_type":"subtitle","codec_name":"subrip","disposition":{"forced":1}},
 		{"index":3,"codec_type":"video","codec_name":"mjpeg","disposition":{"attached_pic":1}},
@@ -22,7 +22,7 @@ func TestParseProbe(t *testing.T) {
 	if item.RunTimeTicks != 12500000 || len(item.Streams) != 3 {
 		t.Fatal("incorrect duration/stream count")
 	}
-	if item.Streams[0].Width != 1920 || !item.Streams[0].IsDefault || item.Streams[1].Language != "rus" || item.Streams[1].SampleRate != 48000 || item.Streams[1].BitRate != 128000 || !item.Streams[2].IsForced {
+	if item.Streams[0].Width != 1920 || item.Streams[0].Rotation != 270 || !item.Streams[0].IsDefault || item.Streams[1].Language != "rus" || item.Streams[1].SampleRate != 48000 || item.Streams[1].BitRate != 128000 || !item.Streams[2].IsForced {
 		t.Fatal("incorrect stream metadata")
 	}
 	for _, raw := range []string{"{", "null", `{}`, `{"streams":[{"codec_type":"audio"}]}`, `{"streams":[{"codec_type":"video","disposition":{"attached_pic":1}}]}`} {
