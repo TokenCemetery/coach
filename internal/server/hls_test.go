@@ -343,3 +343,88 @@ func TestFitLevelFrameRate(t *testing.T) {
 		t.Fatalf("extreme frame rate: %+v", e)
 	}
 }
+
+// Emby Web declares {"Format":"vtt","Method":"Hls"}: an HLS stream then
+// carries the text subtitles in its master playlist instead of external URLs.
+func TestHLSSubtitles(t *testing.T) {
+	store, _, dir := newTestServer(t)
+	movie := playbackMovie()
+	movie.Container = "mkv"
+	movie.Streams = append(movie.Streams,
+		media.Stream{Index: 5, Type: "Subtitle", Codec: "srt", Language: "ru", Path: "Movie.ru.srt"},
+		// A probed language tag may hold any text.
+		media.Stream{Index: 4, Type: "Subtitle", Codec: "srt", Language: `e"n`, Path: "Movie.srt"})
+	server := New(store, "test", nil, &media.Catalog{ID: "movies", Items: []media.Item{movie}})
+	m, err := hls.NewManager("ffmpeg", "ffprobe", filepath.Join(dir, "transcode"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	server.SetHLS(m)
+	h := server.Handler()
+	token := login(t, h)
+	info := func(profile string) (transcoding string, subtitles map[float64]map[string]any) {
+		t.Helper()
+		w := request(h, "POST", "/Items/movie/PlaybackInfo", "application/json", `{"DeviceProfile":`+profile+`}`, token)
+		expectStatus(t, w, 200)
+		var response struct{ MediaSources []map[string]any }
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		subtitles = map[float64]map[string]any{}
+		for _, stream := range response.MediaSources[0]["MediaStreams"].([]any) {
+			if s := stream.(map[string]any); s["Type"] == "Subtitle" {
+				subtitles[s["Index"].(float64)] = s
+			}
+		}
+		transcoding, _ = response.MediaSources[0]["TranscodingUrl"].(string)
+		return transcoding, subtitles
+	}
+	// Without the profile the sidecar subtitles stay external.
+	transcoding, subtitles := info(hlsProfile)
+	if strings.Contains(transcoding, "Subtitle") || subtitles[4]["DeliveryMethod"] != "External" || subtitles[4]["DeliveryUrl"] == nil {
+		t.Fatalf("external: %s %v", transcoding, subtitles[4])
+	}
+	transcoding, subtitles = info(strings.Replace(hlsProfile, `"CodecProfiles"`, `"SubtitleProfiles":[{"Format":"vtt","Method":"Hls"}],"CodecProfiles"`, 1))
+	if !strings.HasSuffix(transcoding, "&SubtitleStreamIndexes=5,4&ManifestSubtitles=vtt") {
+		t.Fatalf("transcoding URL %s", transcoding)
+	}
+	for _, index := range []float64{4, 5} {
+		if s := subtitles[index]; s["DeliveryMethod"] != "Hls" || s["DeliveryUrl"] != nil {
+			t.Fatalf("subtitle %v: %v", index, s)
+		}
+	}
+	// The embedded track is not deliverable without an extractor.
+	if s := subtitles[3]; s["DeliveryMethod"] == "Hls" {
+		t.Fatalf("embedded subtitle: %v", s)
+	}
+	// The master playlist lists them in index order; the undeliverable track
+	// and repeats are left out.
+	w := request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=a&VideoCodec=h264&SubtitleStreamIndexes=5,3,4,5&ManifestSubtitles=vtt", "", "", token)
+	expectStatus(t, w, 200)
+	lines := strings.Split(w.Body.String(), "\n")
+	want := []string{"#EXTM3U",
+		`#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="e'n SRT",DEFAULT=NO,FORCED=NO,AUTOSELECT=NO,URI="subtitles.m3u8?CurrentSubtitleStreamIndex=4&ManifestSubtitles=vtt&PlaySessionId=a&SubtitleStreamIndexes=5%2C3%2C4%2C5&VideoCodec=h264",LANGUAGE="e'n"`,
+		`#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="ru SRT",DEFAULT=NO,FORCED=NO,AUTOSELECT=NO,URI="subtitles.m3u8?CurrentSubtitleStreamIndex=5&ManifestSubtitles=vtt&PlaySessionId=a&SubtitleStreamIndexes=5%2C3%2C4%2C5&VideoCodec=h264",LANGUAGE="ru"`,
+	}
+	if len(lines) < 4 || strings.Join(lines[:3], "\n") != strings.Join(want, "\n") || !strings.HasSuffix(lines[3], `,SUBTITLES="subs"`) {
+		t.Fatalf("master playlist %q", w.Body.String())
+	}
+	expectStatus(t, request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=a&SubtitleStreamIndexes=4,x&ManifestSubtitles=vtt", "", "", token), 400)
+	// Without deliverable subtitles there is no subtitle group.
+	w = request(h, "GET", "/Videos/movie/master.m3u8?PlaySessionId=a&SubtitleStreamIndexes=3&ManifestSubtitles=vtt", "", "", token)
+	if body := w.Body.String(); strings.Contains(body, "SUBTITLES") {
+		t.Fatalf("master playlist without subtitles %q", body)
+	}
+	w = request(h, "GET", "/Videos/movie/subtitles.m3u8?PlaySessionId=a&CurrentSubtitleStreamIndex=4", "", "", token)
+	expectStatus(t, w, 200)
+	if body := w.Body.String(); body != "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:1.000,\n"+
+		"hls1/subs/0.vtt?CurrentSubtitleStreamIndex=4&PlaySessionId=a\n#EXT-X-ENDLIST\n" {
+		t.Fatalf("subtitle playlist %q", body)
+	}
+	for _, path := range []string{"/Videos/movie/subtitles.m3u8?PlaySessionId=a&CurrentSubtitleStreamIndex=3", "/Videos/movie/subtitles.m3u8?PlaySessionId=a",
+		"/Videos/movie/hls1/subs/1.vtt?PlaySessionId=a&CurrentSubtitleStreamIndex=4", "/Videos/movie/hls1/subs/0.vtt?PlaySessionId=a&CurrentSubtitleStreamIndex=3"} {
+		expectStatus(t, request(h, "GET", path, "", "", token), 404)
+	}
+	expectStatus(t, request(h, "GET", "/Videos/movie/subtitles.m3u8?PlaySessionId=a&CurrentSubtitleStreamIndex=4", "", "", ""), 401)
+}

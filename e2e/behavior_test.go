@@ -75,6 +75,62 @@ var behaviors = []behavior{
 		},
 	},
 	{
+		Key:     "hls-subtitle-playlist",
+		Title:   "HLS master playlist carries the subtitle as a WebVTT rendition",
+		Feature: "DynamicHlsService",
+		Run: func(inst *Instance, check *Check) {
+			if inst.IDs.SubtitleIndex == "" {
+				check.Errorf("the movie lists no subtitle stream in MediaStreams")
+				return
+			}
+			// The player follows the playlists' relative URIs with only the
+			// token they carry.
+			follow := func(name string, r Request, uri string) (Request, bool) {
+				target, query, _ := strings.Cut(uri, "?")
+				values, err := url.ParseQuery(query)
+				if uri == "" || err != nil {
+					check.Errorf("%s: no URI to follow", name)
+					return Request{}, false
+				}
+				return Request{Method: "GET", Path: path.Join(path.Dir(r.Path), target), Query: values}, true
+			}
+			master := Request{Method: "GET", Path: "/Videos/" + inst.IDs.MovieID + "/master.m3u8", Query: url.Values{
+				"MediaSourceId": {inst.IDs.MediaSourceID}, "PlaySessionId": {"e2e"}, "VideoCodec": {"h264"}, "AudioCodec": {"aac"},
+				"SubtitleStreamIndexes": {inst.IDs.SubtitleIndex}, "ManifestSubtitles": {"vtt"}, "api_key": {inst.Token}}}
+			resp, err := inst.Send(master, false)
+			if err != nil || resp.Status != 200 || !bytes.Contains(resp.Body, []byte(`SUBTITLES="subs"`)) {
+				check.Errorf("master.m3u8: status %d, err %v, body %q, want a subtitle group", resp.Status, err, snippet(resp.Body))
+				return
+			}
+			_, uri, _ := strings.Cut(string(resp.Body), `URI="`)
+			uri, _, _ = strings.Cut(uri, `"`)
+			playlist, ok := follow("master.m3u8", master, uri)
+			if !ok {
+				return
+			}
+			resp, err = inst.Send(playlist, false)
+			if err != nil || resp.Status != 200 {
+				check.Errorf("subtitles.m3u8: status %d, err %v, body %q", resp.Status, err, snippet(resp.Body))
+				return
+			}
+			uri = ""
+			for line := range strings.Lines(string(resp.Body)) {
+				if strings.HasPrefix(line, "hls1/") {
+					uri = strings.TrimSpace(line)
+				}
+			}
+			segment, ok := follow("subtitles.m3u8", playlist, uri)
+			if !ok {
+				return
+			}
+			resp, err = inst.Send(segment, false)
+			if err != nil || resp.Status != 200 || !bytes.HasPrefix(resp.Body, []byte("WEBVTT")) ||
+				!bytes.Contains(resp.Body, []byte("\nX-TIMESTAMP-MAP=MPEGTS:")) || !bytes.Contains(resp.Body, []byte("Coach e2e subtitle")) {
+				check.Errorf("subtitle segment: status %d, err %v, body %q, want WebVTT with X-TIMESTAMP-MAP and the cue text", resp.Status, err, snippet(resp.Body))
+			}
+		},
+	},
+	{
 		Key:     "download-attachment",
 		Title:   "Download serves the movie file as an attachment to a token in the URL",
 		Feature: "LibraryService",

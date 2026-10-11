@@ -397,3 +397,37 @@ func TestSupersededOnlyByAnotherSegment(t *testing.T) {
 		t.Fatal("a request for another segment did not supersede the older ones")
 	}
 }
+
+// A source time t from the file's start lies at TimestampMap + t in the
+// segments, which is what WebVTT segments rely on. Segment 1 is checked:
+// encoder priming may shift segment 0 by one AAC frame.
+func TestTimestampMap(t *testing.T) {
+	for _, name := range []string{"in.mkv", "in.ts"} {
+		t.Run(name, func(t *testing.T) {
+			path := fixtureOf(t, name, 20)
+			m, err := NewManager("ffmpeg", "ffprobe", filepath.Join(t.TempDir(), "transcode"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			source := Source{ItemID: "movie", Version: "1", Duration: 20, VideoStream: 0, AudioStream: 1, AudioEncode: true, AudioChannels: 2,
+				Open: func() (*os.File, error) { return os.Open(path) }}
+			ctx := context.Background()
+			mpegts, err := m.TimestampMap(ctx, source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bounds, start, _ := m.bounds(ctx, source)
+			if len(bounds) < 2 {
+				t.Fatalf("bounds %v", bounds)
+			}
+			file, err := m.Segment(ctx, "a", "owner", source, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := firstVideoPTS(t, file), float64(mpegts)/90000+bounds[1]; math.Abs(got-want) > 0.002 {
+				t.Fatalf("segment 1 starts at %.3f, want %.3f (map %d, file start %.3f)", got, want, mpegts, start)
+			}
+		})
+	}
+}

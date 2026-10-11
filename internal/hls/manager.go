@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -352,6 +353,24 @@ func (m *Manager) bounds(ctx context.Context, source Source) ([]float64, float64
 		return nil, 0, entry.err
 	}
 	return entry.bounds, entry.start, nil
+}
+
+// muxDelay is how far FFmpeg's MPEG-TS muxer moves timestamps forward: twice
+// its default -muxdelay of 0.7 s, in 90 kHz units. Segments keep the source
+// timestamps otherwise (-copyts).
+const muxDelay = 126000
+
+// TimestampMap returns the MPEG-TS timestamp at which the file's start time
+// falls in the segments of source. WebVTT segments map their zero to it with
+// X-TIMESTAMP-MAP, because subtitle times count from the file's start.
+func (m *Manager) TimestampMap(ctx context.Context, source Source) (int64, error) {
+	_, start, err := m.bounds(ctx, source)
+	if err != nil {
+		return 0, err
+	}
+	// MPEG-TS timestamps wrap at 33 bits; a file may start below zero.
+	const wrap = 1 << 33
+	return ((int64(math.Round(start*90000))+muxDelay)%wrap + wrap) % wrap, nil
 }
 
 // open returns the session id, creating it for source on first use.

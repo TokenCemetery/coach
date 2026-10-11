@@ -44,6 +44,10 @@ var requestOverrides = map[string]func(*Request, Fixtures){
 	},
 	"postUsersByIdImagesByType":        avatarUpload,
 	"postUsersByIdImagesByTypeByIndex": avatarUpload,
+	// Emby Web's master playlist names the subtitle stream of each rendition.
+	"getVideosByIdSubtitlesM3u8": func(r *Request, ids Fixtures) {
+		r.Query.Set("CurrentSubtitleStreamIndex", ids.SubtitleIndex)
+	},
 	// Emby Web always reports at least one item and WasSearched.
 	"postUsersByUseridSearcheditems": func(r *Request, ids Fixtures) {
 		r.Body = fmt.Appendf(nil, `{"Ids":[%q],"WasSearched":true}`, ids.MovieID)

@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -26,6 +28,24 @@ func (s *Server) SetHLS(m *hls.Manager) {
 
 type transcodingProfile struct {
 	Type, Container, Protocol, VideoCodec, AudioCodec string
+}
+
+type subtitleProfile struct {
+	Format, Method, Protocol string
+}
+
+// hlsSubtitles reports whether the client takes WebVTT in the HLS stream,
+// which Emby Web declares as {"Format":"vtt","Method":"Hls"}.
+func (p playbackRequest) hlsSubtitles() bool {
+	if p.DeviceProfile == nil {
+		return false
+	}
+	for _, s := range p.DeviceProfile.SubtitleProfiles {
+		if strings.EqualFold(s.Format, "vtt") && strings.EqualFold(s.Method, "Hls") && (s.Protocol == "" || strings.EqualFold(s.Protocol, "hls")) {
+			return true
+		}
+	}
+	return false
 }
 
 // remuxCodecs returns the codecs of an HLS remux the profile accepts: the
@@ -406,6 +426,9 @@ func hlsFailure(w http.ResponseWriter, r *http.Request, item string, err error) 
 }
 
 // masterPlaylist names one variant: the media playlist with the same query.
+// With ManifestSubtitles=vtt it also lists the deliverable subtitles of
+// SubtitleStreamIndexes. Emby Web matches them to its Hls subtitle streams by
+// position in index order, so they are listed in that order.
 func (s *Server) masterPlaylist(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
 	_, source, ok := s.hlsSource(w, r, session)
 	if !ok {
@@ -419,10 +442,99 @@ func (s *Server) masterPlaylist(w http.ResponseWriter, r *http.Request, token st
 	if bandwidth <= 0 {
 		bandwidth = 1_000_000
 	}
+	query := r.URL.Query()
+	var renditions strings.Builder
+	if strings.EqualFold(query.Get("ManifestSubtitles"), "vtt") && query.Get("SubtitleStreamIndexes") != "" {
+		var indexes []int
+		for _, text := range strings.Split(query.Get("SubtitleStreamIndexes"), ",") {
+			index, err := strconv.Atoi(text)
+			if err != nil {
+				fail(w, 400, "InvalidRequest")
+				return
+			}
+			if s.catalog().SubtitleDeliverable(item, index) && !slices.Contains(indexes, index) {
+				indexes = append(indexes, index)
+			}
+		}
+		slices.Sort(indexes)
+		for _, index := range indexes {
+			stream := item.Streams[slices.IndexFunc(item.Streams, func(s media.Stream) bool { return s.Index == index })]
+			subtitle := maps.Clone(query)
+			subtitle.Set("CurrentSubtitleStreamIndex", strconv.Itoa(index))
+			fmt.Fprintf(&renditions, "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"%s\",DEFAULT=NO,FORCED=NO,AUTOSELECT=NO,URI=\"subtitles.m3u8?%s\"",
+				quotedText(streamTitle(stream)), subtitle.Encode())
+			if stream.Language != "" {
+				fmt.Fprintf(&renditions, ",LANGUAGE=\"%s\"", quotedText(stream.Language))
+			}
+			renditions.WriteString("\n")
+		}
+	}
+	group := ""
+	if renditions.Len() > 0 {
+		group = ",SUBTITLES=\"subs\""
+	}
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-store")
 	// The query is re-encoded, so no raw request text reaches the playlist.
-	_, _ = fmt.Fprintf(w, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=%d\nmain.m3u8?%s\n", bandwidth, r.URL.Query().Encode()) //nolint:gosec // an HLS playlist, not HTML, with an encoded query
+	_, _ = fmt.Fprintf(w, "#EXTM3U\n%s#EXT-X-STREAM-INF:BANDWIDTH=%d%s\nmain.m3u8?%s\n", renditions.String(), bandwidth, group, query.Encode()) //nolint:gosec // an HLS playlist, not HTML, with an encoded query
+}
+
+// quotedText makes s fit an HLS quoted string, which cannot hold a double
+// quote or a line break.
+func quotedText(s string) string {
+	return strings.NewReplacer("\"", "'", "\r", " ", "\n", " ").Replace(s)
+}
+
+// subtitlePlaylist lists one WebVTT segment for the whole video: the player
+// loads it once, and seeking needs no segment of its own.
+func (s *Server) subtitlePlaylist(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+	_, source, ok := s.hlsSource(w, r, session)
+	if !ok {
+		return
+	}
+	item, _ := s.findItem(source.ItemID)
+	index, err := strconv.Atoi(r.URL.Query().Get("CurrentSubtitleStreamIndex"))
+	if err != nil || !s.catalog().SubtitleDeliverable(item, index) {
+		fail(w, 404, "NotFound")
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = fmt.Fprintf(w, "#EXTM3U\n#EXT-X-TARGETDURATION:%d\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:%.3f,\nhls1/subs/0.vtt?%s\n#EXT-X-ENDLIST\n", //nolint:gosec // an HLS playlist, not HTML, with an encoded query
+		max(int(math.Ceil(source.Duration)), 1), source.Duration, r.URL.Query().Encode())
+}
+
+// subtitleSegment serves the subtitle segment: the whole track as WebVTT.
+// Its X-TIMESTAMP-MAP ties the file's start, from which cue times count, to
+// the MPEG-TS timestamps of the video segments.
+func (s *Server) subtitleSegment(w http.ResponseWriter, r *http.Request, session state.Session) {
+	if r.PathValue("segment") != "0.vtt" {
+		fail(w, 404, "NotFound")
+		return
+	}
+	_, source, ok := s.hlsSource(w, r, session)
+	if !ok {
+		return
+	}
+	item, _ := s.findItem(source.ItemID)
+	index, err := strconv.Atoi(r.URL.Query().Get("CurrentSubtitleStreamIndex"))
+	if err != nil || !s.catalog().SubtitleDeliverable(item, index) {
+		fail(w, 404, "NotFound")
+		return
+	}
+	mpegts, err := s.hls.TimestampMap(r.Context(), source)
+	if err != nil {
+		hlsFailure(w, r, source.ItemID, err)
+		return
+	}
+	text, ok := s.subtitleText(w, r, item, index)
+	if !ok {
+		return
+	}
+	header, cues, _ := strings.Cut(string(text), "\n")
+	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = fmt.Fprintf(w, "%s\nX-TIMESTAMP-MAP=MPEGTS:%d,LOCAL:00:00:00.000\n%s", header, mpegts, cues) //nolint:gosec // WebVTT served as text/vtt, not HTML
 }
 
 func (s *Server) mediaPlaylist(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
@@ -444,6 +556,10 @@ func (s *Server) mediaPlaylist(w http.ResponseWriter, r *http.Request, token str
 }
 
 func (s *Server) hlsSegment(w http.ResponseWriter, r *http.Request, token string, session state.Session) {
+	if r.PathValue("playlist") == "subs" {
+		s.subtitleSegment(w, r, session)
+		return
+	}
 	name, found := strings.CutSuffix(r.PathValue("segment"), ".ts")
 	n, err := strconv.Atoi(name)
 	if !found || err != nil || n < 0 {
@@ -473,6 +589,7 @@ func (s *Server) hlsSegment(w http.ResponseWriter, r *http.Request, token string
 func (s *Server) hlsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /videos/{item}/master.m3u8", s.protect(s.masterPlaylist))
 	mux.HandleFunc("GET /videos/{item}/main.m3u8", s.protect(s.mediaPlaylist))
+	mux.HandleFunc("GET /videos/{item}/subtitles.m3u8", s.protect(s.subtitlePlaylist))
 	mux.HandleFunc("GET /videos/{item}/hls1/{playlist}/{segment}", s.protect(s.hlsSegment))
 	mux.HandleFunc("DELETE /videos/activeencodings", s.protect(s.stopEncodings))
 	mux.HandleFunc("POST /videos/activeencodings/delete", s.protect(s.stopEncodings))

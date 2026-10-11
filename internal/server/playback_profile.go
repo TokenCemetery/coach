@@ -20,6 +20,7 @@ type deviceProfile struct {
 	CodecProfiles       []codecProfile
 	ContainerProfiles   []codecProfile
 	TranscodingProfiles []transcodingProfile
+	SubtitleProfiles    []subtitleProfile
 }
 
 type codecProfile struct {

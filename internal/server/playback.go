@@ -101,9 +101,9 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 		}
 	}
 	source := mediaSource(item, streams)
-	// Subtitles are delivered as separate WebVTT files; burn-in is not
-	// implemented. A selected subtitle Coach cannot deliver is dropped and the
-	// video plays without it, rather than refusing playback.
+	// Subtitles are delivered as WebVTT; burn-in is not implemented. A
+	// selected subtitle Coach cannot deliver is dropped and the video plays
+	// without it, rather than refusing playback.
 	subtitle := -1
 	deliverable := func(index int) bool { return catalog.SubtitleDeliverable(item, index) }
 	switch {
@@ -140,6 +140,22 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request, token stri
 			s.hls.Prepare(remuxSource(catalog, item, video))
 		default:
 			remuxBusy = true
+		}
+	}
+	// Like Emby, an HLS stream carries the text subtitles in its master
+	// playlist when the client takes them there; the player switches between
+	// them without a new PlaybackInfo.
+	if transcoding != "" && body.hlsSubtitles() {
+		var indexes []string
+		for i, stream := range item.Streams {
+			if streams[i]["DeliveryMethod"] == "External" {
+				streams[i]["DeliveryMethod"] = "Hls"
+				delete(streams[i], "DeliveryUrl")
+				indexes = append(indexes, strconv.Itoa(stream.Index))
+			}
+		}
+		if len(indexes) > 0 {
+			transcoding += "&SubtitleStreamIndexes=" + strings.Join(indexes, ",") + "&ManifestSubtitles=vtt"
 		}
 	}
 	source["SupportsDirectPlay"] = false
@@ -197,18 +213,28 @@ func (s *Server) streamSubtitle(w http.ResponseWriter, r *http.Request, token st
 		fail(w, 404, "NotFound")
 		return
 	}
+	text, ok := s.subtitleText(w, r, item, index)
+	if !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+	_, _ = w.Write(text) //nolint:gosec // WebVTT served as text/vtt, not HTML
+}
+
+// subtitleText returns a subtitle stream as WebVTT. On failure the response
+// has been written.
+func (s *Server) subtitleText(w http.ResponseWriter, r *http.Request, item media.Item, index int) ([]byte, bool) {
 	text, err := s.catalog().OpenSubtitle(r.Context(), item, index)
 	if errors.Is(err, os.ErrNotExist) {
 		fail(w, 404, "NotFound")
-		return
+		return nil, false
 	}
 	if err != nil {
 		slog.Warn("Subtitle unavailable", "item", item.ID, "index", index)
 		fail(w, 404, "MediaUnavailable")
-		return
+		return nil, false
 	}
-	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
-	_, _ = w.Write(text)
+	return text, true
 }
 
 // directStreamURL matches the relative form Emby returns: no "/emby" prefix,
